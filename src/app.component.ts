@@ -13,8 +13,10 @@ type UIState = 'idle' | 'parsing' | 'confirm' | 'generating' | 'complete';
   imports: [CommonModule],
 })
 export class AppComponent {
-  private fileParserService = inject(FileParserService);
-  private pdfService = inject(PdfService);
+  // Fix: Explicitly type injected services to resolve type inference issue.
+  private fileParserService: FileParserService = inject(FileParserService);
+  // Fix: Explicitly type injected services to resolve type inference issue.
+  private pdfService: PdfService = inject(PdfService);
 
   qcFile = signal<File | null>(null);
   scriptFile = signal<File | null>(null);
@@ -23,6 +25,7 @@ export class AppComponent {
   generatedPageCount = signal<number>(0);
   pageOffset = signal<number>(0);
   isAudibleProject = signal<boolean>(false);
+  isPostQcProject = signal<boolean>(false);
   
   uiState = signal<UIState>('idle');
   parsedCorrections = signal<Correction[]>([]);
@@ -56,10 +59,17 @@ export class AppComponent {
     const input = event.target as HTMLInputElement;
     this.isAudibleProject.set(input.checked);
   }
+
+  onPostQcChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.isPostQcProject.set(input.checked);
+  }
   
   async startParsing(): Promise<void> {
     const currentQcFile = this.qcFile();
     const isAudible = this.isAudibleProject();
+    const isPostQc = this.isPostQcProject();
+
     if (!currentQcFile || !this.scriptFile()) {
       this.status.set({ text: 'Please upload both QC Report and Script files.', type: 'error' });
       return;
@@ -69,7 +79,7 @@ export class AppComponent {
     this.status.set({ text: 'Parsing QC report...', type: 'info' });
 
     try {
-      const corrections = await this.fileParserService.parseQcFile(currentQcFile, isAudible);
+      const corrections = await this.fileParserService.parseQcFile(currentQcFile, isAudible, isPostQc);
       this.parsedCorrections.set(corrections);
 
       if (corrections.length === 0) {
@@ -93,6 +103,7 @@ export class AppComponent {
     const corrections = this.parsedCorrections();
     const currentScriptFile = this.scriptFile();
     const pageOffset = this.pageOffset();
+    const isAudible = this.isAudibleProject();
 
     if (!currentScriptFile || corrections.length === 0) {
       this.status.set({ text: 'Cannot proceed. Script file or corrections are missing.', type: 'error' });
@@ -105,7 +116,7 @@ export class AppComponent {
 
     try {
       const scriptPdfBytes = await currentScriptFile.arrayBuffer();
-      const { pdfBytes, pageCount } = await this.pdfService.createQCPack(scriptPdfBytes, corrections, pageOffset);
+      const { pdfBytes, pageCount } = await this.pdfService.createQCPack(scriptPdfBytes, corrections, pageOffset, isAudible);
       
       this.generatedPdfBytes.set(pdfBytes);
       this.generatedPageCount.set(pageCount);
@@ -148,6 +159,7 @@ export class AppComponent {
 
     this.pageOffset.set(0);
     this.isAudibleProject.set(false);
+    this.isPostQcProject.set(false);
     this.resetToIdle();
   }
 

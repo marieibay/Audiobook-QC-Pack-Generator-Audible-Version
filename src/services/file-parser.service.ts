@@ -7,7 +7,7 @@ declare var XLSX: any;
 @Injectable({ providedIn: 'root' })
 export class FileParserService {
 
-  async parseQcFile(file: File, isAudible: boolean): Promise<Correction[]> {
+  async parseQcFile(file: File, isAudible: boolean, isPostQc: boolean): Promise<Correction[]> {
     if (file.name.endsWith('.csv')) {
       return new Promise((resolve, reject) => {
         Papa.parse(file, {
@@ -18,7 +18,7 @@ export class FileParserService {
               return reject(new Error(`CSV Parsing Error: ${results.errors[0].message}`));
             }
             try {
-              const corrections = this.parseRows(results.data, isAudible);
+              const corrections = this.parseRows(results.data, isAudible, isPostQc);
               resolve(corrections);
             } catch (error) {
               reject(error);
@@ -36,14 +36,84 @@ export class FileParserService {
       const workbook = XLSX.read(fileContent, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-      return this.parseRows(rows, isAudible);
+      return this.parseRows(rows, isAudible, isPostQc);
     }
 
     throw new Error("Unsupported file type. Please upload a .csv or .xlsx file.");
   }
 
-  private parseRows(rows: any[][], isAudible: boolean): Correction[] {
-    const { header, data } = this.findHeaderAndData(rows);
+  private parseRows(rows: any[][], isAudible: boolean, isPostQc: boolean): Correction[] {
+    if (isPostQc) {
+      return this.parsePostQcRows(rows, isAudible);
+    }
+    return this.parseStandardQcRows(rows, isAudible);
+  }
+
+  private parsePostQcRows(rows: any[][], isAudible: boolean): Correction[] {
+    const { header, data } = this.findPostQcHeaderAndData(rows);
+    const headerUpper = header.map(h => h ? h.toString().trim().toUpperCase() : '');
+
+    const trackIndex = headerUpper.indexOf('CD-TRK');
+    const timeIndex = headerUpper.indexOf('TIME');
+    const pageIndex = headerUpper.findIndex(h => h.startsWith('PAGE'));
+    const textIndex = headerUpper.indexOf('TEXT');
+    const problemIndex = headerUpper.indexOf('PROBLEM DESCRIPTION');
+    const editorCommentsIndex = headerUpper.indexOf('EDITOR COMMENTS');
+    
+    if ([trackIndex, timeIndex, pageIndex, textIndex, problemIndex, editorCommentsIndex].includes(-1)) {
+        throw new Error('Could not find all required headers for Post QC format.');
+    }
+
+    const corrections: Correction[] = [];
+    let pickupId = 1;
+
+    for (const row of data) {
+        if (!row || row.length === 0) continue;
+
+        const editorComment = row[editorCommentsIndex] ? row[editorCommentsIndex].toString().trim() : '';
+        if (editorComment !== 'Fixed Not Possible Without Pickup') {
+            continue;
+        }
+
+        const pageStr = row[pageIndex] ? row[pageIndex].toString() : '0';
+        const pageMatch = pageStr.match(/\d+/);
+        const page = pageMatch ? parseInt(pageMatch[0], 10) : 0;
+        
+        const fullText = row[textIndex] ? row[textIndex].toString() : '';
+        const problemDescription = row[problemIndex] ? row[problemIndex].toString() : '';
+
+        let wordsForOblong: string[] = [];
+        // Context is always the full text with brackets removed.
+        const contextPhrase = fullText.replace(/\[\[|\]\]/g, '');
+        
+        // First, prioritize [[...]] from the Text column for what to encircle.
+        const oblongMatch = fullText.match(/\[\[(.*?)\]\]/);
+        if (oblongMatch && oblongMatch[1]) {
+            wordsForOblong = oblongMatch[1].split(' ').filter(Boolean);
+        } else {
+            // As a fallback, check for 'noise on "..."' in the Problem Description.
+            const noiseMatch = problemDescription.match(/noise on ["'](.*?)["']/i);
+            if (noiseMatch && noiseMatch[1]) {
+                wordsForOblong = noiseMatch[1].split(' ').filter(Boolean);
+            }
+        }
+        
+        corrections.push({
+            Id: String(pickupId++),
+            Page: page,
+            ContextPhrase: contextPhrase,
+            Notes: problemDescription,
+            Track: row[trackIndex] ? row[trackIndex].toString() : '',
+            Timestamp: row[timeIndex] ? row[timeIndex].toString() : '',
+            correctionType: 'misread', // Treat all as misread for highlighting
+            wordsForOblong: wordsForOblong,
+        });
+    }
+    return corrections;
+  }
+
+  private parseStandardQcRows(rows: any[][], isAudible: boolean): Correction[] {
+    const { header, data } = this.findStandardHeaderAndData(rows);
     const headerUpper = header.map(h => h ? h.toString().trim().toUpperCase() : '');
 
     const idIndex = headerUpper.indexOf('ID');
@@ -109,7 +179,29 @@ export class FileParserService {
     return corrections;
   }
 
-  private findHeaderAndData(rows: any[][]): { header: string[], data: any[][] } {
+  private findPostQcHeaderAndData(rows: any[][]): { header: string[], data: any[][] } {
+    let headerIndex = -1;
+    const requiredCols = ['CD-TRK', 'TIME', 'TEXT', 'EDITOR COMMENTS'];
+
+    for (let i = 0; i < rows.length; i++) {
+        if (!Array.isArray(rows[i])) continue;
+        const row = rows[i].map(h => h ? h.toString().trim().toUpperCase() : '');
+        if (requiredCols.every(col => row.includes(col))) {
+            headerIndex = i;
+            break;
+        }
+    }
+
+    if (headerIndex === -1) {
+        throw new Error(`Could not find required header columns for Post QC format (${requiredCols.join(', ')}) in the QC file.`);
+    }
+
+    const header = rows[headerIndex].map(h => h ? h.toString() : '');
+    const data = rows.slice(headerIndex + 1);
+    return { header, data };
+  }
+  
+  private findStandardHeaderAndData(rows: any[][]): { header: string[], data: any[][] } {
     let headerIndex = -1;
     const requiredCols = ['ID', 'PAGE', 'CONTEXT', 'NOTES'];
 
@@ -123,7 +215,7 @@ export class FileParserService {
     }
 
     if (headerIndex === -1) {
-        throw new Error(`Could not find required header columns (${requiredCols.join(', ')}) in the QC file.`);
+        throw new Error(`Could not find required header columns for Standard format (${requiredCols.join(', ')}) in the QC file.`);
     }
 
     const header = rows[headerIndex].map(h => h ? h.toString() : '');

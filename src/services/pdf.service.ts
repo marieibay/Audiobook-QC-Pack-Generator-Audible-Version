@@ -16,7 +16,8 @@ export class PdfService {
   async createQCPack(
     originalPdfBytes: ArrayBuffer,
     corrections: Correction[],
-    pageOffset: number
+    pageOffset: number,
+    isAudible: boolean
   ): Promise<{ pdfBytes: Uint8Array; pageCount: number }> {
     const { PDFDocument, rgb, StandardFonts, cmyk } = PDFLib;
 
@@ -40,37 +41,39 @@ export class PdfService {
       let underlineSegments: UnderlineSegment[] = [];
       let oblongSegments: UnderlineSegment[] = [];
 
-      if (pageData) {
-        const sortedItems = this.groupItemsIntoLines(pageData.items).flat();
-        const underlineRanges = this.findItemSegmentsForPhrase(corr.ContextPhrase, sortedItems);
-        
-        if (underlineRanges) {
-          underlineSegments = underlineRanges.map(r => ({
-            item: sortedItems[r.itemIndex],
-            startFrac: r.startFrac,
-            endFrac: r.endFrac,
-          }));
+      if (!isAudible) {
+        if (pageData) {
+          const sortedItems = this.groupItemsIntoLines(pageData.items).flat();
+          const underlineRanges = this.findItemSegmentsForPhrase(corr.ContextPhrase, sortedItems);
+          
+          if (underlineRanges) {
+            underlineSegments = underlineRanges.map(r => ({
+              item: sortedItems[r.itemIndex],
+              startFrac: r.startFrac,
+              endFrac: r.endFrac,
+            }));
+          } else {
+            console.warn(`Could not precisely match context phrase on page ${pageNum}. Context Phrase:`, corr.ContextPhrase);
+          }
+          
+          if ((corr.correctionType === 'misread' || corr.correctionType === 'missing' || corr.correctionType === 'inserted') && corr.wordsForOblong && corr.wordsForOblong.length > 0 && underlineSegments.length > 0) {
+              const sentenceItems = underlineSegments.map(seg => seg.item);
+              const oblongRanges = this.findItemSegmentsForPhrase(corr.wordsForOblong.join(' '), sentenceItems);
+
+              if(oblongRanges) {
+                   oblongSegments = oblongRanges.map(r => ({
+                      item: sentenceItems[r.itemIndex],
+                      startFrac: r.startFrac,
+                      endFrac: r.endFrac,
+                  }));
+              } else {
+                   console.warn(`Could not find words for oblong WITHIN CONTEXT on page ${pageNum}. Words:`, corr.wordsForOblong.join(' '));
+              }
+          }
+
         } else {
-          console.warn(`Could not precisely match context phrase on page ${pageNum}. Context Phrase:`, corr.ContextPhrase);
+          console.warn(`Could not find page ${pageNum} in script PDF for correction:`, corr);
         }
-        
-        if ((corr.correctionType === 'misread' || corr.correctionType === 'missing' || corr.correctionType === 'inserted') && corr.wordsForOblong && corr.wordsForOblong.length > 0 && underlineSegments.length > 0) {
-            const sentenceItems = underlineSegments.map(seg => seg.item);
-            const oblongRanges = this.findItemSegmentsForPhrase(corr.wordsForOblong.join(' '), sentenceItems);
-
-            if(oblongRanges) {
-                 oblongSegments = oblongRanges.map(r => ({
-                    item: sentenceItems[r.itemIndex],
-                    startFrac: r.startFrac,
-                    endFrac: r.endFrac,
-                }));
-            } else {
-                 console.warn(`Could not find words for oblong WITHIN CONTEXT on page ${pageNum}. Words:`, corr.wordsForOblong.join(' '));
-            }
-        }
-
-      } else {
-        console.warn(`Could not find page ${pageNum} in script PDF for correction:`, corr);
       }
 
       correctionsByPage.get(pageNum)!.push({ ...corr, underlineSegments, oblongSegments });
