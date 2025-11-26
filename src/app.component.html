@@ -209,11 +209,21 @@
           @if (instructionsVisible()) {
             <div class="mt-4 space-y-4 text-sm text-gray-600">
               <ol class="list-decimal list-inside space-y-2">
-                <li>Upload your QC report in either CSV or Excel format. The report must contain columns for 'ID', 'PAGE', 'CONTEXT', and 'NOTES', and a column next to 'CONTEXT' indicating the pickup status.</li>
-                <li>Upload the full script as a single PDF file. This should be the exact manuscript the QC report references.</li>
-                <li>Click "Generate QC Pack". The app will parse your report to find all corrections marked as "Fix Not Possible Without Pickup".</li>
-                <li>After parsing, you will see a preview of the found corrections. Click "Proceed" to create the final PDF.</li>
-                <li>A new PDF will be generated containing *only* the pages that require corrections. Each page will have the relevant context sentence underlined. A note at the top of the page will detail the required fix.</li>
+                <li>
+                  <span class="font-semibold">Select Project Type (Optional):</span> Check the 'Audible Project' or 'Post QC Project' box if your QC report uses one of those specific formats. Leave unchecked for the standard format.
+                </li>
+                <li>
+                  <span class="font-semibold">Upload Files:</span> Upload your QC report (CSV/XLSX) and the full script (PDF).
+                </li>
+                <li>
+                  <span class="font-semibold">Set Page Number Offset:</span> If the page numbers in your report don't match the PDF page numbers (e.g., report page 1 is actually page 5 in the PDF viewer), enter the difference in this box. In this example, you would enter '4'. Leave it at '0' if the numbers match.
+                </li>
+                <li>
+                  <span class="font-semibold">Generate & Confirm:</span> Click "Generate QC Pack". The app will parse your report to find corrections. Review the preview, then click "Proceed".
+                </li>
+                <li>
+                  <span class="font-semibold">Download:</span> A new PDF will be generated containing only the pages that require corrections. Each page will have the error highlighted and a notes box at the top.
+                </li>
               </ol>
             </div>
           }
