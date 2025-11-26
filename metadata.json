@@ -1,0 +1,5 @@
+{
+  "name": "QC Pack Generator Testing",
+  "description": "Upload a QC notes PDF and a manuscript PDF to generate a 'QC Pack' PDF containing only the pages that require corrections.",
+  "requestFramePermissions": []
+}

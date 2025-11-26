@@ -1,0 +1,214 @@
+<div class="min-h-screen bg-slate-50 flex flex-col">
+  <header class="bg-white shadow-sm">
+    <div class="max-w-4xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex items-center space-x-3">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+      <h1 class="text-2xl font-bold text-slate-800">
+        Audiobook QC Pack Generator
+      </h1>
+    </div>
+  </header>
+
+  <main class="flex-grow flex items-center justify-center py-10 px-4">
+    <div class="bg-white rounded-xl shadow-2xl p-8 max-w-2xl w-full">
+        <div class="text-center mb-8">
+            <h2 class="text-2xl font-bold text-gray-800">Generate QC Pack</h2>
+            <p class="text-gray-500 mt-2">Upload your QC report and script to create a PDF of pages needing corrections.</p>
+        </div>
+
+        <div class="mb-6 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">
+            <div class="relative flex items-start">
+                <div class="flex h-6 items-center">
+                    <input id="audibleCheckbox" (change)="onAudibleChange($event)" [checked]="isAudibleProject()" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
+                </div>
+                <div class="ml-3 text-sm leading-6">
+                    <label for="audibleCheckbox" class="font-medium text-gray-900">Audible Project</label>
+                    <p class="text-gray-500 text-xs">Check this box to add "MR:" and "MW:" prefixes to notes for the narrator.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-6 mb-6">
+            <div class="bg-gray-50 p-6 rounded-lg border border-dashed border-gray-300">
+                <label class="block text-sm font-medium text-gray-700">1. Upload QC Report (CSV/XLSX)</label>
+                <div class="mt-2 flex items-center rounded-md">
+                    <label for="qcInput" class="relative cursor-pointer rounded-md bg-white font-semibold text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-600 focus-within:ring-offset-2 hover:text-indigo-500 px-3 py-1.5 border border-gray-300 hover:bg-gray-50 text-sm">
+                        <span>Choose File</span>
+                        <input id="qcInput" (change)="onQcFileChange($event)" type="file" class="sr-only" accept=".csv, .xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+                    </label>
+                    <span class="ml-3 text-sm text-slate-500 truncate" [title]="qcFile()?.name">{{ qcFile()?.name || 'No file chosen' }}</span>
+                </div>
+                 <p class="mt-2 text-xs text-gray-400">.csv or .xlsx format</p>
+            </div>
+            
+            <div class="bg-gray-50 p-6 rounded-lg border border-dashed border-gray-300">
+                <label class="block text-sm font-medium text-gray-700">2. Upload Full Script (PDF)</label>
+                <div class="mt-2 flex items-center rounded-md">
+                    <label for="scriptInput" class="relative cursor-pointer rounded-md bg-white font-semibold text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-600 focus-within:ring-offset-2 hover:text-indigo-500 px-3 py-1.5 border border-gray-300 hover:bg-gray-50 text-sm">
+                        <span>Choose File</span>
+                        <input id="scriptInput" (change)="onScriptFileChange($event)" type="file" class="sr-only" accept=".pdf">
+                    </label>
+                    <span class="ml-3 text-sm text-slate-500 truncate" [title]="scriptFile()?.name">{{ scriptFile()?.name || 'No file chosen' }}</span>
+                </div>
+                 <p class="mt-2 text-xs text-gray-400">.pdf format</p>
+            </div>
+        </div>
+        
+        <div class="mb-8">
+          <div class="bg-gray-50 p-6 rounded-lg border border-dashed border-gray-300">
+            <label for="pageOffsetInput" class="block text-sm font-medium text-gray-700">3. Page Number Offset</label>
+            <p class="mt-1 text-xs text-gray-500">
+                If report page numbers don't match the PDF (e.g., due to front matter), enter the difference here.
+            </p>
+            <div class="mt-3">
+                <input id="pageOffsetInput"
+                       type="number"
+                       min="0"
+                       [value]="pageOffset()"
+                       (input)="onPageOffsetChange($event)"
+                       class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm px-3 py-2"
+                       placeholder="e.g., If report page 1 is PDF page 5, enter 4">
+            </div>
+          </div>
+        </div>
+
+        @if (uiState() === 'confirm' && parsedCorrections().length > 0) {
+          <div class="mb-6">
+            <h3 class="text-lg font-semibold mb-4 text-center text-gray-700">Corrections Preview</h3>
+            <div class="bg-gray-50 rounded-lg p-4 max-h-60 overflow-y-auto border">
+              @for (correction of parsedCorrections().slice(0, 5); track correction.Id) {
+                <div class="mb-3 p-3 bg-white rounded border border-gray-200">
+                  <div class="font-medium text-gray-800">Pickup #{{ correction.Id }} - Page {{ correction.Page }}</div>
+                  <div class="text-sm text-gray-600">
+                    <span class="font-semibold text-gray-700">Note:</span> {{ correction.Notes }}
+                  </div>
+                  <div class="text-sm text-gray-500 truncate" [title]="correction.ContextPhrase">
+                    <span class="font-semibold text-gray-600">Context:</span> {{ correction.ContextPhrase }}
+                  </div>
+                </div>
+              }
+              @if (parsedCorrections().length > 5) {
+                <div class="text-sm text-gray-500 text-center pt-2">
+                  ... and {{ parsedCorrections().length - 5 }} more corrections
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <div class="flex flex-col items-center">
+          @switch (uiState()) {
+            @case ('idle') {
+              <button id="generateBtn" (click)="startParsing()" 
+                      [disabled]="!qcFile() || !scriptFile()"
+                      class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                <span>Generate QC Pack</span>
+              </button>
+            }
+            @case ('parsing') {
+               <button disabled class="bg-indigo-400 text-white font-bold py-3 px-8 rounded-full shadow-lg cursor-not-allowed">
+                  <div class="flex items-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Parsing Report...</span>
+                  </div>
+              </button>
+            }
+            @case ('generating') {
+               <button disabled class="bg-indigo-400 text-white font-bold py-3 px-8 rounded-full shadow-lg cursor-not-allowed">
+                  <div class="flex items-center">
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Generating PDF...</span>
+                  </div>
+              </button>
+            }
+            @case ('confirm') {
+              <div class="flex items-center space-x-4">
+                <button (click)="generateConfirmedQCPack()"
+                        class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                  Proceed
+                </button>
+                <button (click)="reset()"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">
+                  Start Over
+                </button>
+              </div>
+            }
+            @case ('complete') {
+              <div class="flex items-center space-x-4">
+                <button (click)="downloadGeneratedPack()"
+                        [disabled]="generatedPageCount() === 0"
+                        class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                  Download QC Pack ({{ generatedPageCount() }} Pages)
+                </button>
+                <button (click)="reset()"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-8 rounded-full shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">
+                  Start Over
+                </button>
+              </div>
+            }
+          }
+
+            @if (status(); as currentStatus) {
+              <div class="mt-4 p-3 w-full text-center text-sm font-medium rounded-lg flex items-center justify-center"
+                [class.bg-blue-100]="currentStatus.type === 'info'"
+                [class.text-blue-700]="currentStatus.type === 'info'"
+                [class.bg-green-100]="currentStatus.type === 'success'"
+                [class.text-green-700]="currentStatus.type === 'success'"
+                [class.bg-yellow-100]="currentStatus.type === 'warning'"
+                [class.text-yellow-700]="currentStatus.type === 'warning'"
+                [class.bg-red-100]="currentStatus.type === 'error'"
+                [class.text-red-700]="currentStatus.type === 'error'">
+                  @switch (currentStatus.type) {
+                    @case ('success') {
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                    }
+                    @case ('info') {
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>
+                    }
+                    @case ('warning') {
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 3.001-1.742 3.001H4.42c-1.53 0-2.493-1.667-1.743-3.001l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                    }
+                    @case ('error') {
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                    }
+                  }
+                <span class="ml-2">{{ currentStatus.text }}</span>
+              </div>
+            }
+        </div>
+
+        <div class="mt-8 border-t pt-6">
+          <button (click)="toggleInstructions()" class="w-full text-left text-gray-600 font-semibold hover:text-indigo-600 transition-colors">
+            <div class="flex justify-between items-center">
+              <span>How It Works</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform" [class.rotate-180]="instructionsVisible()" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </button>
+          @if (instructionsVisible()) {
+            <div class="mt-4 space-y-4 text-sm text-gray-600">
+              <ol class="list-decimal list-inside space-y-2">
+                <li>Upload your QC report in either CSV or Excel format. The report must contain columns for 'ID', 'PAGE', 'CONTEXT', and 'NOTES', and a column next to 'CONTEXT' indicating the pickup status.</li>
+                <li>Upload the full script as a single PDF file. This should be the exact manuscript the QC report references.</li>
+                <li>Click "Generate QC Pack". The app will parse your report to find all corrections marked as "Fix Not Possible Without Pickup".</li>
+                <li>After parsing, you will see a preview of the found corrections. Click "Proceed" to create the final PDF.</li>
+                <li>A new PDF will be generated containing *only* the pages that require corrections. Each page will have the relevant context sentence underlined. A note at the top of the page will detail the required fix.</li>
+              </ol>
+            </div>
+          }
+        </div>
+    </div>
+  </main>
+
+  <footer class="text-center py-6 text-slate-400 text-sm">
+    <p>Powered by Angular, pdf-lib and pdf.js</p>
+  </footer>
+</div>
