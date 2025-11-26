@@ -59,7 +59,6 @@ export class FileParserService {
     for (const row of data) {
       if (!row || row.length === 0) continue;
 
-      // Check for a track filename row (e.g., '003_Chapter_One.wav') by searching all cells.
       let trackFilename = '';
       for (const cell of row) {
         const cellStr = cell ? cell.toString() : '';
@@ -70,7 +69,6 @@ export class FileParserService {
       }
 
       if (trackFilename) {
-        // Found a track filename, extract the track number and move to the next row.
         const trackMatch = trackFilename.match(/^(\d+)/);
         if (trackMatch) {
           currentTrack = trackMatch[1];
@@ -86,12 +84,12 @@ export class FileParserService {
 
       if (status === 'Fix Not Possible Without Pickup') {
         const notes = row[notesIndex] ? row[notesIndex].toString() : '';
-        const originalContext = row[contextIndex] ? row[contextIndex].toString().replace(/[﹏_]+/g, ' ').replace(/\s+/g, ' ').trim() : '';
+        const originalContext = this.normalizeText(row[contextIndex] ? row[contextIndex].toString() : '');
         const timestamp = timeCodeIndex !== -1 && row[timeCodeIndex] ? row[timeCodeIndex].toString() : '';
 
-        const { formattedNote, wordsToCorrect } = this.processNotes(notes, isAudible);
+        const processedNote = this.processNotes(notes, originalContext, isAudible);
 
-        if (!originalContext) {
+        if (!processedNote.searchableContext) {
             console.warn(`Correction on page ${row[pageIndex]} skipped because it has no context phrase.`);
             continue;
         }
@@ -99,11 +97,12 @@ export class FileParserService {
         corrections.push({
           Id: row[idIndex].toString(),
           Page: Number(row[pageIndex]),
-          ContextPhrase: originalContext,
-          Notes: formattedNote,
-          WordsToCorrect: wordsToCorrect,
+          ContextPhrase: processedNote.searchableContext,
+          Notes: processedNote.formattedNote,
           Track: currentTrack,
           Timestamp: timestamp,
+          correctionType: processedNote.correctionType,
+          wordsForOblong: processedNote.wordsForOblong,
         });
       }
     }
@@ -132,18 +131,30 @@ export class FileParserService {
     return { header, data };
   }
   
-  private processNotes(notes: string, isAudible: boolean): { formattedNote: string, wordsToCorrect: string[] } {
-      if (!notes) return { formattedNote: '', wordsToCorrect: [] };
+  private normalizeText(s: string): string {
+    if (!s) return '';
+    return s.replace(/[﹏_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  
+  private processNotes(
+    notes: string, 
+    originalContext: string, 
+    isAudible: boolean
+  ): { 
+      formattedNote: string, 
+      wordsForOblong: string[], 
+      correctionType: 'misread' | 'missing' | 'inserted',
+      searchableContext: string,
+  } {
+      if (!notes) return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: originalContext };
       notes = notes.trim();
 
       const sbMatch = notes.match(/^(?:(MR|MW):\s*)?(.+?)\s+S\/B\s+(.+)$/i);
       if (sbMatch) {
           const originalPrefix = sbMatch[1];
-          const wrong = sbMatch[2].trim().replace(/^"|"$/g, '');
-          const right = sbMatch[3].trim().replace(/^"|"$/g, '');
+          const wrong = sbMatch[2].trim().replace(/^["']|["']$/g, '');
+          const right = sbMatch[3].trim().replace(/^["']|["']$/g, '');
           
-          // Use the 'right' word(s) for searching, as this is what's present in the script PDF.
-          const wordsToCorrect = right.split(' ').filter(w => w.length > 0);
           let formattedNote = `read as "${wrong}" should be read as "${right}"`;
 
           if (isAudible) {
@@ -151,33 +162,46 @@ export class FileParserService {
             formattedNote = prefix + formattedNote;
           }
 
-          return { formattedNote, wordsToCorrect };
+          return { 
+            formattedNote, 
+            wordsForOblong: right.split(' ').filter(w => w.length > 0),
+            correctionType: 'misread',
+            searchableContext: originalContext
+          };
       }
 
       const missingMatch = notes.match(/^(?:Word(?:s)?\s+)?Missing:\s+(.+)$/i);
       if (missingMatch) {
-          const missing = missingMatch[1].trim().replace(/^"|"$/g, '');
+          const missing = missingMatch[1].trim().replace(/^["']|["']$/g, '');
           let formattedNote = `"${missing}" is missing and should be read.`;
           if (isAudible) {
               formattedNote = `MW: ${formattedNote}`;
           }
+          
           return {
               formattedNote,
-              // The words are missing, so they cannot be found in the PDF.
-              // We must rely on the ContextPhrase for positioning.
-              wordsToCorrect: []
+              wordsForOblong: missing.split(' ').filter(w => w.length > 0),
+              correctionType: 'missing',
+              searchableContext: originalContext
           };
       }
 
       const insertedMatch = notes.match(/^(?:Word(?:s)?\s+)?Inserted:\s+(.+)$/i);
       if (insertedMatch) {
-          const inserted = insertedMatch[1].trim().replace(/^"|"$/g, '');
+          const inserted = insertedMatch[1].trim().replace(/^["']|["']$/g, '');
           return {
               formattedNote: `"${inserted}" was inserted and should be omitted.`,
-              wordsToCorrect: []
+              wordsForOblong: inserted.split(' ').filter(w => w.length > 0),
+              correctionType: 'inserted',
+              searchableContext: originalContext
           };
       }
       
-      return { formattedNote: notes, wordsToCorrect: [] };
+      return { 
+        formattedNote: notes, 
+        wordsForOblong: [], 
+        correctionType: 'misread', 
+        searchableContext: originalContext 
+      };
   }
 }

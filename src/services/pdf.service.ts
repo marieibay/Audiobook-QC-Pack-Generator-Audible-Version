@@ -18,14 +18,16 @@ export class PdfService {
     corrections: Correction[],
     pageOffset: number
   ): Promise<{ pdfBytes: Uint8Array; pageCount: number }> {
-    const { PDFDocument, rgb, StandardFonts } = PDFLib;
+    const { PDFDocument, rgb, StandardFonts, cmyk } = PDFLib;
 
     const originalPdfDoc = await PDFDocument.load(originalPdfBytes);
     const qcPackPdfDoc = await PDFDocument.create();
     const pageTexts = await this.extractPdfTextWithItems(originalPdfBytes);
 
-    // pageNum -> corrections + underline segments
-    const correctionsByPage = new Map<number, (Correction & { underlineSegments: UnderlineSegment[] })[]>();
+    const correctionsByPage = new Map<number, (Correction & { 
+        underlineSegments: UnderlineSegment[], 
+        oblongSegments: UnderlineSegment[],
+    })[]>();
 
     for (const corr of corrections) {
       const pageNum = corr.Page + pageOffset;
@@ -36,30 +38,42 @@ export class PdfService {
 
       const pageData = pageTexts.find(pt => pt.pageNum === pageNum);
       let underlineSegments: UnderlineSegment[] = [];
+      let oblongSegments: UnderlineSegment[] = [];
 
       if (pageData) {
-        // Put items in reading order first
         const sortedItems = this.groupItemsIntoLines(pageData.items).flat();
-
-        const ranges = this.findItemSegmentsForPhrase(corr.ContextPhrase, sortedItems);
-
-        if (ranges) {
-          underlineSegments = ranges.map(r => ({
+        const underlineRanges = this.findItemSegmentsForPhrase(corr.ContextPhrase, sortedItems);
+        
+        if (underlineRanges) {
+          underlineSegments = underlineRanges.map(r => ({
             item: sortedItems[r.itemIndex],
             startFrac: r.startFrac,
             endFrac: r.endFrac,
           }));
         } else {
-          console.warn(
-            `Could not precisely match context phrase on page ${pageNum}. Context Phrase:`,
-            corr.ContextPhrase
-          );
+          console.warn(`Could not precisely match context phrase on page ${pageNum}. Context Phrase:`, corr.ContextPhrase);
         }
+        
+        if ((corr.correctionType === 'misread' || corr.correctionType === 'missing' || corr.correctionType === 'inserted') && corr.wordsForOblong && corr.wordsForOblong.length > 0 && underlineSegments.length > 0) {
+            const sentenceItems = underlineSegments.map(seg => seg.item);
+            const oblongRanges = this.findItemSegmentsForPhrase(corr.wordsForOblong.join(' '), sentenceItems);
+
+            if(oblongRanges) {
+                 oblongSegments = oblongRanges.map(r => ({
+                    item: sentenceItems[r.itemIndex],
+                    startFrac: r.startFrac,
+                    endFrac: r.endFrac,
+                }));
+            } else {
+                 console.warn(`Could not find words for oblong WITHIN CONTEXT on page ${pageNum}. Words:`, corr.wordsForOblong.join(' '));
+            }
+        }
+
       } else {
         console.warn(`Could not find page ${pageNum} in script PDF for correction:`, corr);
       }
 
-      correctionsByPage.get(pageNum)!.push({ ...corr, underlineSegments });
+      correctionsByPage.get(pageNum)!.push({ ...corr, underlineSegments, oblongSegments });
     }
 
     const pagesToInclude = Array.from(correctionsByPage.keys()).sort((a, b) => a - b);
@@ -71,26 +85,44 @@ export class PdfService {
 
       const [copiedPage] = await qcPackPdfDoc.copyPages(originalPdfDoc, [pageIndex]);
       const correctionsForPage = correctionsByPage.get(pageNum)!;
-
-      // 🔽 Draw underlines: ONLY the matched phrase segments
+      
       for (const correction of correctionsForPage) {
         for (const seg of correction.underlineSegments) {
           const { item, startFrac, endFrac } = seg;
-
-          // safety clamp
           const clampedStart = Math.max(0, Math.min(1, startFrac));
-          const clampedEnd = Math.max(clampedStart + 0.01, Math.min(1, endFrac)); // ensure at least a tiny line
-
-          const x1 = item.x + item.width * clampedStart;
-          const x2 = item.x + item.width * clampedEnd;
-          const y = item.y;
+          const clampedEnd = Math.max(clampedStart, Math.min(1, endFrac));
+          if (clampedEnd <= clampedStart) continue;
 
           copiedPage.drawLine({
-            start: { x: x1, y: y - 2 },
-            end: { x: x2, y: y - 2 },
-            thickness: 1,
-            color: rgb(0, 0, 0),
+            start: { x: item.x + item.width * clampedStart, y: item.y - 2 },
+            end: { x: item.x + item.width * clampedEnd, y: item.y - 2 },
+            thickness: 1, color: rgb(0, 0, 0),
           });
+        }
+        
+        const oblongsToDraw = this.groupSegmentsIntoLines(correction.oblongSegments);
+        for(const lineOfSegments of oblongsToDraw) {
+            if (lineOfSegments.length === 0) continue;
+            
+            const firstItem = lineOfSegments[0].item;
+            const lastItem = lineOfSegments[lineOfSegments.length - 1].item;
+            
+            const x = firstItem.x + firstItem.width * lineOfSegments[0].startFrac;
+            const width = (lastItem.x + lastItem.width * lineOfSegments[lineOfSegments.length - 1].endFrac) - x;
+            
+            const ellipseCenterX = x + width / 2;
+            const ellipseCenterY = firstItem.y + (firstItem.height * 0.35) - 1;
+            const ellipseXScale = width / 2 + 2;
+            const ellipseYScale = (firstItem.height * 0.6) + 1;
+
+            copiedPage.drawEllipse({
+                x: ellipseCenterX,
+                y: ellipseCenterY,
+                xScale: ellipseXScale,
+                yScale: ellipseYScale,
+                borderColor: rgb(0, 0, 0),
+                borderWidth: 1,
+            });
         }
       }
 
@@ -116,9 +148,28 @@ export class PdfService {
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Notes box
-  // ---------------------------------------------------------------------------
+  private groupSegmentsIntoLines(segments: UnderlineSegment[]): UnderlineSegment[][] {
+    if (!segments || segments.length === 0) return [];
+
+    const lines = new Map<number, UnderlineSegment[]>();
+    const Y_TOLERANCE = 5; 
+    
+    segments.forEach(seg => {
+        let foundLine = false;
+        for (const y of lines.keys()) {
+            if (Math.abs(y - seg.item.y) < Y_TOLERANCE) {
+                lines.get(y)!.push(seg);
+                foundLine = true;
+                break;
+            }
+        }
+        if (!foundLine) {
+            lines.set(seg.item.y, [seg]);
+        }
+    });
+    
+    return Array.from(lines.values()).map(line => line.sort((a,b) => a.item.x - b.item.x));
+  }
 
   private drawNotesBox(page: any, text: string, font: any, rgb: any): void {
     const { width, height } = page.getSize();
@@ -166,10 +217,6 @@ export class PdfService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // pdf.js text extraction
-  // ---------------------------------------------------------------------------
-
   private async extractPdfTextWithItems(pdfBytes: ArrayBuffer): Promise<PageText[]> {
     const pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
     const pageTexts: PageText[] = [];
@@ -193,10 +240,6 @@ export class PdfService {
     return pageTexts;
   }
 
-  // ---------------------------------------------------------------------------
-  // Robust phrase matcher: returns per-item fractional coverage
-  // ---------------------------------------------------------------------------
-
   private findItemSegmentsForPhrase(
     textToFind: string,
     pageItems: PageTextItem[]
@@ -207,7 +250,6 @@ export class PdfService {
     const searchTokens = normalizedSearch.split(' ').filter(Boolean);
     if (searchTokens.length === 0) return null;
 
-    // Precompute normalized strings for items
     const itemNorms: string[] = pageItems.map(i => this.normalizeForSearch(i.str));
 
     interface TokenEntry {
@@ -219,7 +261,6 @@ export class PdfService {
 
     const tokenList: TokenEntry[] = [];
 
-    // Build token list with positions inside each itemNorm
     itemNorms.forEach((norm, itemIndex) => {
       if (!norm) return;
       const pieces = norm.split(' ').filter(Boolean);
@@ -240,11 +281,9 @@ export class PdfService {
     });
 
     if (tokenList.length === 0) {
-      console.warn('No tokens on page when searching for:', textToFind);
       return null;
     }
 
-    // Try to match searchTokens against tokenList in order.
     for (let startTokIdx = 0; startTokIdx < tokenList.length; startTokIdx++) {
       let tIdx = startTokIdx;
       let sIdx = 0;
@@ -254,14 +293,12 @@ export class PdfService {
         const searchTok = searchTokens[sIdx];
 
         if (pageTok === searchTok) {
-          // Direct match
           sIdx++;
           tIdx++;
         } else if (
           tIdx + 1 < tokenList.length &&
           pageTok + tokenList[tIdx + 1].token === searchTok
         ) {
-          // Handle split words: "par" + "ticular" vs "particular"
           sIdx++;
           tIdx += 2;
         } else {
@@ -270,7 +307,6 @@ export class PdfService {
       }
 
       if (sIdx === searchTokens.length) {
-        // Match found from tokenList[startTokIdx .. tIdx-1]
         const perItem = new Map<number, { start: number; end: number }>();
 
         for (let k = startTokIdx; k < tIdx; k++) {
@@ -311,10 +347,6 @@ export class PdfService {
     return null;
   }
 
-  // ---------------------------------------------------------------------------
-  // Group items into lines (for reading order)
-  // ---------------------------------------------------------------------------
-
   private groupItemsIntoLines(items: PageTextItem[]): PageTextItem[][] {
     if (!items || items.length === 0) return [];
 
@@ -347,10 +379,6 @@ export class PdfService {
       .sort((a, b) => b[0] - a[0])
       .map(entry => entry[1].sort((a, b) => a.x - b.x));
   }
-
-  // ---------------------------------------------------------------------------
-  // Normalization & timestamp helper
-  // ---------------------------------------------------------------------------
 
   private normalizeForSearch(s: string): string {
     if (!s) return '';

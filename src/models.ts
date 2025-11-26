@@ -1,11 +1,14 @@
 export interface Correction {
   Id: string;
   Page: number;
-  ContextPhrase: string;
+  ContextPhrase: string; // This will be the SEARCHABLE context for finding the sentence
   Notes: string;
-  WordsToCorrect?: string[];
   Track?: string;
   Timestamp?: string;
+
+  // New properties for richer annotations
+  correctionType: 'misread' | 'missing' | 'inserted';
+  wordsForOblong?: string[];
 }
 
 export type Status = {
