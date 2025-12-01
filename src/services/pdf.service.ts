@@ -132,9 +132,11 @@ export class PdfService {
       // Notes box
       const notesWithTimestamps = correctionsForPage.map(c => {
         let noteText = c.Notes;
-        const formattedTimestamp = this.formatTimestampForNote(c.Timestamp);
-        if (c.Track && formattedTimestamp) {
-          noteText += `\n${c.Track}/${formattedTimestamp}`;
+        if (!isAudible) {
+            const formattedTimestamp = this.formatTimestampForNote(c.Timestamp);
+            if (c.Track && formattedTimestamp) {
+              noteText += `\n${c.Track}/${formattedTimestamp}`;
+            }
         }
         return noteText;
       });
