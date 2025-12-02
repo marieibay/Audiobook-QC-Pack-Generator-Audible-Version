@@ -79,8 +79,8 @@ export class FileParserService {
         const pageMatch = pageStr.match(/\d+/);
         const page = pageMatch ? parseInt(pageMatch[0], 10) : 0;
         
-        const fullText = row[textIndex] ? row[textIndex].toString() : '';
-        const problemDescription = row[problemIndex] ? row[problemIndex].toString() : '';
+        const fullText = row[textIndex] ? row[textIndex].toString().replace(/\u200b/g, '') : '';
+        const problemDescription = row[problemIndex] ? row[problemIndex].toString().replace(/\u200b/g, '') : '';
 
         let wordsForOblong: string[] = [];
         // Context is always the full text with brackets removed.
@@ -225,7 +225,7 @@ export class FileParserService {
   
   private normalizeText(s: string): string {
     if (!s) return '';
-    return s.replace(/[﹏_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return s.replace(/\u200b/g, '').replace(/[﹏_]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
   
   private processNotes(
@@ -239,7 +239,7 @@ export class FileParserService {
       searchableContext: string,
   } {
       if (!notes) return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: originalContext };
-      notes = notes.trim();
+      notes = notes.trim().replace(/\u200b/g, '');
 
       const sbMatch = notes.match(/^(?:(MR|MW):\s*)?(.+?)\s+S\/B\s+(.+)$/i);
       if (sbMatch) {
@@ -261,18 +261,96 @@ export class FileParserService {
             searchableContext: originalContext
           };
       }
-
-      const missingMatch = notes.match(/^(?:Word(?:s)?\s+)?Missing:\s+(.+)$/i);
-      if (missingMatch) {
-          const missing = missingMatch[1].trim().replace(/^["']|["']$/g, '');
-          let formattedNote = `"${missing}" is missing and should be read.`;
+      
+      const soundsLikeMatch = notes.match(/^(.*)\s+sounds like\s+(.*)$/i);
+      if (soundsLikeMatch) {
+          const right = soundsLikeMatch[1].trim().replace(/^["']|["']$/g, '');
+          const wrong = soundsLikeMatch[2].trim().replace(/^["']|["']$/g, '');
+          
+          let formattedNote = `read as "${wrong}" should be read as "${right}"`;
+          
           if (isAudible) {
-              formattedNote = `MW: ${formattedNote}`;
+              formattedNote = 'MR: ' + formattedNote;
+          }
+
+          return {
+              formattedNote,
+              wordsForOblong: right.split(' ').filter(w => w.length > 0),
+              correctionType: 'misread',
+              searchableContext: originalContext
+          };
+      }
+
+      const omittedLineMatch = notes.match(/^omitted line:\s*(.+)$/i);
+      if (omittedLineMatch) {
+          const omitted = omittedLineMatch[1].trim().replace(/^["']|["']$/g, '');
+          const omittedWords = omitted.split(' ').filter(w => w.length > 0);
+          let formattedNote = `"${omitted}" is missing and should be read.`;
+          
+          if (isAudible) {
+              formattedNote = 'ML: ' + formattedNote;
           }
           
           return {
               formattedNote,
-              wordsForOblong: missing.split(' ').filter(w => w.length > 0),
+              wordsForOblong: omittedWords,
+              correctionType: 'missing',
+              searchableContext: originalContext
+          };
+      }
+
+      const missingMatch = notes.match(/^(?:Word(?:s)?\s+)?Missing:\s+(.+)$/i);
+      if (missingMatch) {
+          const missing = missingMatch[1].trim().replace(/^["']|["']$/g, '');
+          const missingWords = missing.split(' ').filter(w => w.length > 0);
+          let formattedNote = `"${missing}" is missing and should be read.`;
+          
+          if (isAudible) {
+              const prefix = missingWords.length >= 2 ? 'ML: ' : 'MW: ';
+              formattedNote = prefix + formattedNote;
+          }
+          
+          return {
+              formattedNote,
+              wordsForOblong: missingWords,
+              correctionType: 'missing',
+              searchableContext: originalContext
+          };
+      }
+
+      const omittedMatch = notes.match(/^omitted:\s*(.+)$/i);
+      if (omittedMatch) {
+          const omitted = omittedMatch[1].trim().replace(/^["']|["']$/g, '');
+          const omittedWords = omitted.split(' ').filter(w => w.length > 0);
+          let formattedNote = `"${omitted}" is missing and should be read.`;
+          
+          if (isAudible) {
+              const prefix = omittedWords.length >= 2 ? 'ML: ' : 'MW: ';
+              formattedNote = prefix + formattedNote;
+          }
+          
+          return {
+              formattedNote,
+              wordsForOblong: omittedWords,
+              correctionType: 'missing',
+              searchableContext: originalContext
+          };
+      }
+
+      const omittedPlainMatch = notes.match(/^omitted\s+(.+)$/i);
+      if (omittedPlainMatch) {
+          const omitted = omittedPlainMatch[1].trim().replace(/^["']|["']$/g, '');
+          const omittedWords = omitted.split(' ').filter(w => w.length > 0);
+          let formattedNote = `"${omitted}" is missing and should be read.`;
+          
+          if (isAudible) {
+              const prefix = omittedWords.length >= 2 ? 'ML: ' : 'MW: ';
+              formattedNote = prefix + formattedNote;
+          }
+          
+          return {
+              formattedNote,
+              wordsForOblong: omittedWords,
               correctionType: 'missing',
               searchableContext: originalContext
           };
@@ -281,9 +359,17 @@ export class FileParserService {
       const insertedMatch = notes.match(/^(?:Word(?:s)?\s+)?Inserted:\s+(.+)$/i);
       if (insertedMatch) {
           const inserted = insertedMatch[1].trim().replace(/^["']|["']$/g, '');
+          const insertedWords = inserted.split(' ').filter(w => w.length > 0);
+          let formattedNote = `"${inserted}" was inserted and should be omitted.`;
+
+          if (isAudible) {
+              const prefix = insertedWords.length >= 2 ? 'ML: ' : 'MW: ';
+              formattedNote = prefix + formattedNote;
+          }
+
           return {
-              formattedNote: `"${inserted}" was inserted and should be omitted.`,
-              wordsForOblong: inserted.split(' ').filter(w => w.length > 0),
+              formattedNote,
+              wordsForOblong: insertedWords,
               correctionType: 'inserted',
               searchableContext: originalContext
           };
