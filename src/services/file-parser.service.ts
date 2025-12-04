@@ -71,7 +71,7 @@ export class FileParserService {
         if (!row || row.length === 0) continue;
 
         const editorComment = row[editorCommentsIndex] ? row[editorCommentsIndex].toString().trim() : '';
-        if (editorComment !== 'Fixed Not Possible Without Pickup') {
+        if (editorComment !== 'Fix Not Possible Without Pickup') {
             continue;
         }
 
