@@ -44,9 +44,29 @@ export class FileParserService {
 
   private parseRows(rows: any[][], isAudible: boolean, isPostQc: boolean): Correction[] {
     if (isPostQc) {
+      // If user explicitly checks the Post QC box, use that parser.
       return this.parsePostQcRows(rows, isAudible);
     }
-    return this.parseStandardQcRows(rows, isAudible);
+    
+    // Otherwise, attempt standard parsing first.
+    try {
+      return this.parseStandardQcRows(rows, isAudible);
+    } catch (standardError) {
+      // If standard parsing fails (likely due to wrong header), try the Post QC parser as a fallback.
+      // This makes the app more robust if the user forgets to check the box for a Post QC file.
+      if (standardError instanceof Error && standardError.message.includes('Could not find required header columns')) {
+        console.warn('Standard parser failed. Attempting to parse as Post QC format.', standardError.message);
+        try {
+          return this.parsePostQcRows(rows, isAudible);
+        } catch (postQcError) {
+          // If the fallback also fails, throw the original error as it's the user's expected path.
+          console.error('Fallback Post QC parser also failed.', postQcError);
+          throw standardError;
+        }
+      }
+      // If it's a different kind of error, rethrow it immediately.
+      throw standardError;
+    }
   }
 
   private parsePostQcRows(rows: any[][], isAudible: boolean): Correction[] {
@@ -81,20 +101,44 @@ export class FileParserService {
         
         const fullText = row[textIndex] ? row[textIndex].toString().replace(/\u200b/g, '') : '';
         const problemDescription = row[problemIndex] ? row[problemIndex].toString().replace(/\u200b/g, '') : '';
+        const problemLower = problemDescription.toLowerCase();
 
         let wordsForOblong: string[] = [];
-        // Context is always the full text with brackets removed.
+        let correctionType: 'misread' | 'missing' | 'inserted' = 'misread'; // Default
         const contextPhrase = fullText.replace(/\[\[|\]\]/g, '');
-        
-        // First, prioritize [[...]] from the Text column for what to encircle.
-        const oblongMatch = fullText.match(/\[\[(.*?)\]\]/);
-        if (oblongMatch && oblongMatch[1]) {
-            wordsForOblong = oblongMatch[1].split(' ').filter(Boolean);
+        const insertedWordMatch = problemDescription.match(/^\[.*\]\s+inserted$/i);
+
+        // Determine correction type from problem description
+        if (insertedWordMatch) {
+            correctionType = 'inserted';
+        } else if (problemLower.includes('missing') || problemLower.includes('omitted')) {
+            correctionType = 'missing';
         } else {
-            // As a fallback, check for 'noise on "..."' in the Problem Description.
-            const noiseMatch = problemDescription.match(/noise on ["'](.*?)["']/i);
-            if (noiseMatch && noiseMatch[1]) {
-                wordsForOblong = noiseMatch[1].split(' ').filter(Boolean);
+            correctionType = 'misread';
+        }
+
+        // Determine words to circle based on type and TEXT column format
+        if (correctionType === 'inserted') {
+            const insertionBracketsMatch = fullText.match(/(\S+)\s*\[\[\s*\]\]\s*(\S+)/);
+            if (insertionBracketsMatch) {
+                // For insertions, circle the word before and the word after the [[ ]] marker.
+                wordsForOblong = [insertionBracketsMatch[1], insertionBracketsMatch[2]];
+            } else {
+                console.warn('Could not find insertion point `[[ ]]` for an "inserted" correction:', fullText);
+            }
+        } else if (correctionType === 'missing') {
+            // For missing words, we don't circle anything, as the word isn't in the script.
+            wordsForOblong = [];
+        } else { // 'misread' and other types
+            const misreadBracketsMatch = fullText.match(/\[\[(.*?)\]\]/);
+            if (misreadBracketsMatch && misreadBracketsMatch[1] && misreadBracketsMatch[1].trim()) {
+                wordsForOblong = misreadBracketsMatch[1].split(' ').filter(Boolean);
+            } else {
+                // Fallback for other notes like 'noise on "word"'
+                const noiseMatch = problemDescription.match(/noise on ["'](.*?)["']/i);
+                if (noiseMatch && noiseMatch[1]) {
+                    wordsForOblong = noiseMatch[1].split(' ').filter(Boolean);
+                }
             }
         }
         
@@ -105,7 +149,7 @@ export class FileParserService {
             Notes: problemDescription,
             Track: row[trackIndex] ? row[trackIndex].toString() : '',
             Timestamp: row[timeIndex] ? row[timeIndex].toString() : '',
-            correctionType: 'misread', // Treat all as misread for highlighting
+            correctionType: correctionType,
             wordsForOblong: wordsForOblong,
         });
     }
@@ -154,10 +198,10 @@ export class FileParserService {
 
       if (status === 'Fix Not Possible Without Pickup') {
         const notes = row[notesIndex] ? row[notesIndex].toString() : '';
-        const originalContext = this.normalizeText(row[contextIndex] ? row[contextIndex].toString() : '');
+        const rawContext = row[contextIndex] ? row[contextIndex].toString() : '';
         const timestamp = timeCodeIndex !== -1 && row[timeCodeIndex] ? row[timeCodeIndex].toString() : '';
 
-        const processedNote = this.processNotes(notes, originalContext, isAudible);
+        const processedNote = this.processNotes(notes, rawContext, isAudible);
 
         if (!processedNote.searchableContext) {
             console.warn(`Correction on page ${row[pageIndex]} skipped because it has no context phrase.`);
@@ -230,7 +274,7 @@ export class FileParserService {
   
   private processNotes(
     notes: string, 
-    originalContext: string, 
+    rawContext: string, 
     isAudible: boolean
   ): { 
       formattedNote: string, 
@@ -238,7 +282,8 @@ export class FileParserService {
       correctionType: 'misread' | 'missing' | 'inserted',
       searchableContext: string,
   } {
-      if (!notes) return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: originalContext };
+      const searchableContext = this.normalizeText(rawContext);
+      if (!notes) return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: searchableContext };
       notes = notes.trim().replace(/\u200b/g, '');
 
       const sbMatch = notes.match(/^(?:(MR|MW):\s*)?(.+?)\s+S\/B\s+(.+)$/i);
@@ -258,7 +303,7 @@ export class FileParserService {
             formattedNote, 
             wordsForOblong: right.split(' ').filter(w => w.length > 0),
             correctionType: 'misread',
-            searchableContext: originalContext
+            searchableContext: searchableContext
           };
       }
       
@@ -277,7 +322,7 @@ export class FileParserService {
               formattedNote,
               wordsForOblong: right.split(' ').filter(w => w.length > 0),
               correctionType: 'misread',
-              searchableContext: originalContext
+              searchableContext: searchableContext
           };
       }
 
@@ -293,9 +338,9 @@ export class FileParserService {
           
           return {
               formattedNote,
-              wordsForOblong: omittedWords,
+              wordsForOblong: [], // A missing word cannot be circled
               correctionType: 'missing',
-              searchableContext: originalContext
+              searchableContext: searchableContext
           };
       }
 
@@ -312,9 +357,9 @@ export class FileParserService {
           
           return {
               formattedNote,
-              wordsForOblong: missingWords,
+              wordsForOblong: [], // A missing word cannot be circled
               correctionType: 'missing',
-              searchableContext: originalContext
+              searchableContext: searchableContext
           };
       }
 
@@ -331,16 +376,16 @@ export class FileParserService {
           
           return {
               formattedNote,
-              wordsForOblong: omittedWords,
+              wordsForOblong: [], // A missing word cannot be circled
               correctionType: 'missing',
-              searchableContext: originalContext
+              searchableContext: searchableContext
           };
       }
 
       const omittedPlainMatch = notes.match(/^omitted\s+(.+)$/i);
       if (omittedPlainMatch) {
           const omitted = omittedPlainMatch[1].trim().replace(/^["']|["']$/g, '');
-          const omittedWords = omitted.split(' ').filter(w => w.length > 0);
+          const omittedWords = omittedPlainMatch[1].split(' ').filter(w => w.length > 0);
           let formattedNote = `"${omitted}" is missing and should be read.`;
           
           if (isAudible) {
@@ -350,9 +395,9 @@ export class FileParserService {
           
           return {
               formattedNote,
-              wordsForOblong: omittedWords,
+              wordsForOblong: [], // A missing word cannot be circled
               correctionType: 'missing',
-              searchableContext: originalContext
+              searchableContext: searchableContext
           };
       }
 
@@ -367,11 +412,19 @@ export class FileParserService {
               formattedNote = prefix + formattedNote;
           }
 
+          let wordsForOblong: string[] = [];
+          const markerMatch = rawContext.match(/(\S+)\s+[﹏_]+\s+(\S+)/);
+          if (markerMatch) {
+              wordsForOblong = [markerMatch[1], markerMatch[2]];
+          } else {
+              wordsForOblong = searchableContext.split(' ').filter(w => w.length > 0);
+          }
+
           return {
               formattedNote,
-              wordsForOblong: insertedWords,
+              wordsForOblong: wordsForOblong,
               correctionType: 'inserted',
-              searchableContext: originalContext
+              searchableContext: searchableContext
           };
       }
       
@@ -379,7 +432,7 @@ export class FileParserService {
         formattedNote: notes, 
         wordsForOblong: [], 
         correctionType: 'misread', 
-        searchableContext: originalContext 
+        searchableContext: searchableContext 
       };
   }
 }
