@@ -80,7 +80,7 @@ export class PdfService {
     }
 
     const pagesToInclude = Array.from(correctionsByPage.keys()).sort((a, b) => a - b);
-    const timesRomanFont = await qcPackPdfDoc.embedFont(StandardFonts.TimesRoman);
+    const notesFont = await qcPackPdfDoc.embedFont(StandardFonts.Helvetica);
 
     for (const pageNum of pagesToInclude) {
       const pageIndex = pageNum - 1;
@@ -142,7 +142,7 @@ export class PdfService {
       });
 
       const allNotesForPage = notesWithTimestamps.join('\n\n');
-      this.drawNotesBox(copiedPage, allNotesForPage, timesRomanFont, rgb);
+      this.drawNotesBox(copiedPage, allNotesForPage, notesFont, rgb);
 
       qcPackPdfDoc.addPage(copiedPage);
     }
@@ -178,36 +178,47 @@ export class PdfService {
 
   private drawNotesBox(page: any, text: string, font: any, rgb: any): void {
     const { width, height } = page.getSize();
-    const topMargin = 30;
-    const fontSize = 12;
-    const lineHeight = 15;
-    const maxWidth = width * 0.6;
-    const horizontalMargin = (width - maxWidth) / 2;
+    const topMargin = 25;
+    const leftMargin = 25;
+    const fontSize = 10;
+    const lineHeight = 13;
+    const maxWidth = width * 0.4;
+    const padding = 8;
 
+    // Calculate the total height required for the text block
     const lines = text.split('\n');
     let textBlockHeight = 0;
     lines.forEach(line => {
-      const lineCount = Math.ceil(font.widthOfTextAtSize(line, fontSize) / maxWidth);
-      textBlockHeight += (lineCount > 0 ? lineCount : 1) * lineHeight;
+      const wrappedLineCount = Math.ceil(font.widthOfTextAtSize(line, fontSize) / maxWidth) || 1;
+      textBlockHeight += wrappedLineCount * lineHeight;
     });
-    textBlockHeight -= (lineHeight - fontSize);
+    // Adjust for the last line's leading to make padding even
+    if (text.length > 0) {
+      textBlockHeight -= (lineHeight - fontSize);
+    }
+    
+    const boxWidth = maxWidth + (padding * 2);
+    const boxHeight = textBlockHeight + (padding * 2);
 
+    const boxX = leftMargin;
+    const boxY = height - topMargin - boxHeight;
+
+    // Draw the box
     page.drawRectangle({
-      x: horizontalMargin - 5,
-      y: height - topMargin - textBlockHeight - 10,
-      width: maxWidth + 10,
-      height: textBlockHeight + 15,
+      x: boxX,
+      y: boxY,
+      width: boxWidth,
+      height: boxHeight,
       color: rgb(1, 1, 1),
       borderColor: rgb(0, 0, 0),
       borderWidth: 1,
     });
 
-    const linesToDraw = text.split('\n');
-    let currentY = height - topMargin - fontSize;
-
-    for (const line of linesToDraw) {
+    // Draw the text line by line inside the box
+    let currentY = boxY + boxHeight - padding - fontSize;
+    for (const line of lines) {
       page.drawText(line, {
-        x: horizontalMargin,
+        x: boxX + padding,
         y: currentY,
         size: fontSize,
         font: font,
@@ -215,10 +226,8 @@ export class PdfService {
         lineHeight: lineHeight,
         maxWidth: maxWidth,
       });
-
-      const lineCount = Math.ceil(font.widthOfTextAtSize(line, fontSize) / maxWidth);
-      const heightOfThisBlock = (lineCount > 0 ? lineCount : 1) * lineHeight;
-      currentY -= heightOfThisBlock;
+      const wrappedLineCount = Math.ceil(font.widthOfTextAtSize(line, fontSize) / maxWidth) || 1;
+      currentY -= wrappedLineCount * lineHeight;
     }
   }
 

@@ -144,8 +144,7 @@ export class FileParserService {
     const contextIndex = headerUpper.indexOf('CONTEXT');
     const notesIndex = headerUpper.indexOf('NOTES');
     const timeCodeIndex = headerUpper.indexOf('TIME CODE');
-    const statusIndex = contextIndex + 1; // Assume status is in the column after context
-
+    
     const corrections: Correction[] = [];
     let currentTrack = '';
 
@@ -173,7 +172,18 @@ export class FileParserService {
         continue;
       }
 
-      const status = row[statusIndex] ? row[statusIndex].toString().trim() : '';
+      let status = '';
+      // Search for the status string in the columns to the right of the CONTEXT column.
+      // This handles cases where there are empty columns between CONTEXT and the status.
+      if (contextIndex !== -1) {
+          for (let i = contextIndex + 1; i < row.length; i++) {
+              const cellValue = row[i] ? row[i].toString().trim() : '';
+              if (cellValue === 'Fix Not Possible Without Pickup') {
+                  status = cellValue;
+                  break;
+              }
+          }
+      }
 
       if (status === 'Fix Not Possible Without Pickup') {
         const notes = row[notesIndex] ? row[notesIndex].toString() : '';
