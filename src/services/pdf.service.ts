@@ -114,14 +114,9 @@ export class PdfService {
             const width = (lastItem.x + lastItem.width * lineOfSegments[lineOfSegments.length - 1].endFrac) - x;
             
             const ellipseCenterX = x + width / 2;
-            // The y-coordinate from pdf.js is the text baseline. The text's visual
-            // center is slightly above this baseline. The previous multiplier (0.4)
-            // placed the ellipse too high. This new value (0.25) shifts the center
-            // down to better align with the main body of the text (around the x-height).
-            const ellipseCenterY = firstItem.y + firstItem.height * 0.25;
+            const ellipseCenterY = firstItem.y + (firstItem.height * 0.35) - 1;
             const ellipseXScale = width / 2 + 2;
-            // Slightly increase vertical scale for better coverage of ascenders/descenders.
-            const ellipseYScale = firstItem.height * 0.6;
+            const ellipseYScale = (firstItem.height * 0.6) + 1;
 
             copiedPage.drawEllipse({
                 x: ellipseCenterX,
