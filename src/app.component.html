@@ -17,26 +17,15 @@
             <p class="text-gray-500 mt-2">Upload your QC report and script to create a PDF of pages needing corrections.</p>
         </div>
 
-        <div class="grid md:grid-cols-2 gap-6 mb-6">
-            <div class="bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">
+        <div class="mb-6">
+            <div class="bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300 max-w-xs mx-auto">
                 <div class="relative flex items-start">
                     <div class="flex h-6 items-center">
                         <input id="audibleCheckbox" (change)="onAudibleChange($event)" [checked]="isAudibleProject()" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
                     </div>
                     <div class="ml-3 text-sm leading-6">
                         <label for="audibleCheckbox" class="font-medium text-gray-900">Audible Project</label>
-                        <p class="text-gray-500 text-xs">Special formatting for Audible pickups.</p>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">
-                <div class="relative flex items-start">
-                    <div class="flex h-6 items-center">
-                        <input id="postQcCheckbox" (change)="onPostQcChange($event)" [checked]="isPostQcProject()" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600">
-                    </div>
-                    <div class="ml-3 text-sm leading-6">
-                        <label for="postQcCheckbox" class="font-medium text-gray-900">Post QC Project</label>
-                        <p class="text-gray-500 text-xs">Use parser for Post QC report format.</p>
+                        <p class="text-gray-500 text-xs">Apply special note formatting for Audible.</p>
                     </div>
                 </div>
             </div>
@@ -210,7 +199,7 @@
             <div class="mt-4 space-y-4 text-sm text-gray-600">
               <ol class="list-decimal list-inside space-y-2">
                 <li>
-                  <span class="font-semibold">Select Project Type (Optional):</span> Check the 'Audible Project' or 'Post QC Project' box if your QC report uses one of those specific formats. Leave unchecked for the standard format.
+                  <span class="font-semibold">Select Audible Project (Optional):</span> Check this box if your report requires Audible-specific note formatting. The Post QC report format is detected automatically.
                 </li>
                 <li>
                   <span class="font-semibold">Upload Files:</span> Upload your QC report (CSV/XLSX) and the full script (PDF).

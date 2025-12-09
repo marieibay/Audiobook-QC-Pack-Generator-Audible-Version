@@ -25,7 +25,6 @@ export class AppComponent {
   generatedPageCount = signal<number>(0);
   pageOffset = signal<number>(0);
   isAudibleProject = signal<boolean>(false);
-  isPostQcProject = signal<boolean>(false);
   
   uiState = signal<UIState>('idle');
   parsedCorrections = signal<Correction[]>([]);
@@ -59,16 +58,10 @@ export class AppComponent {
     const input = event.target as HTMLInputElement;
     this.isAudibleProject.set(input.checked);
   }
-
-  onPostQcChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.isPostQcProject.set(input.checked);
-  }
   
   async startParsing(): Promise<void> {
     const currentQcFile = this.qcFile();
     const isAudible = this.isAudibleProject();
-    const isPostQc = this.isPostQcProject();
 
     if (!currentQcFile || !this.scriptFile()) {
       this.status.set({ text: 'Please upload both QC Report and Script files.', type: 'error' });
@@ -79,7 +72,7 @@ export class AppComponent {
     this.status.set({ text: 'Parsing QC report...', type: 'info' });
 
     try {
-      const corrections = await this.fileParserService.parseQcFile(currentQcFile, isAudible, isPostQc);
+      const corrections = await this.fileParserService.parseQcFile(currentQcFile, isAudible);
       this.parsedCorrections.set(corrections);
 
       if (corrections.length === 0) {
@@ -159,7 +152,6 @@ export class AppComponent {
 
     this.pageOffset.set(0);
     this.isAudibleProject.set(false);
-    this.isPostQcProject.set(false);
     this.resetToIdle();
   }
 

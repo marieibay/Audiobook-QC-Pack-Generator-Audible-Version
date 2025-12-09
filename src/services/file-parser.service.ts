@@ -7,7 +7,7 @@ declare var XLSX: any;
 @Injectable({ providedIn: 'root' })
 export class FileParserService {
 
-  async parseQcFile(file: File, isAudible: boolean, isPostQc: boolean): Promise<Correction[]> {
+  async parseQcFile(file: File, isAudible: boolean): Promise<Correction[]> {
     if (file.name.endsWith('.csv')) {
       return new Promise((resolve, reject) => {
         Papa.parse(file, {
@@ -18,7 +18,7 @@ export class FileParserService {
               return reject(new Error(`CSV Parsing Error: ${results.errors[0].message}`));
             }
             try {
-              const corrections = this.parseRows(results.data, isAudible, isPostQc);
+              const corrections = this.parseRows(results.data, isAudible);
               resolve(corrections);
             } catch (error) {
               reject(error);
@@ -36,7 +36,7 @@ export class FileParserService {
       const workbook = XLSX.read(fileContent, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-      return this.parseRows(rows, isAudible, isPostQc);
+      return this.parseRows(rows, isAudible);
     }
 
     throw new Error("Unsupported file type. Please upload a .csv or .xlsx file.");
@@ -53,13 +53,8 @@ export class FileParserService {
     return false;
   }
 
-  private parseRows(rows: any[][], isAudible: boolean, isPostQc: boolean): Correction[] {
-    // If user has selected a format, respect it.
-    if (isPostQc) {
-      return this.parsePostQcRows(rows, isAudible);
-    }
-
-    // Attempt to auto-detect format if user hasn't specified Post QC
+  private parseRows(rows: any[][], isAudible: boolean): Correction[] {
+    // Attempt to auto-detect format
     const hasPostQcHeaders = this.hasHeaders(rows, ['CD-TRK', 'TIME', 'TEXT', 'EDITOR COMMENTS']);
     const hasStandardHeaders = this.hasHeaders(rows, ['ID', 'PAGE', 'CONTEXT', 'NOTES']);
     
