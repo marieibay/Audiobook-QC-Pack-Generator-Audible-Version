@@ -88,8 +88,8 @@ export class FileParserService {
     for (const row of data) {
         if (!row || row.length === 0) continue;
 
-        const editorComment = row[editorCommentsIndex] ? row[editorCommentsIndex].toString().trim() : '';
-        if (editorComment !== 'Fix Not Possible Without Pickup' && editorComment !== 'Please fix.') {
+        const editorComment = row[editorCommentsIndex] ? row[editorCommentsIndex].toString().trim().toLowerCase() : '';
+        if (editorComment !== 'fix not possible without pickup' && editorComment !== 'please fix.') {
             continue;
         }
 
