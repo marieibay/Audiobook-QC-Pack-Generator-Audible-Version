@@ -257,36 +257,58 @@ export class FileParserService {
   }
   
   private processNotes(
-    notes: string, 
-    originalContext: string, 
+    notes: string,
+    originalContext: string,
     isAudible: boolean
-  ): { 
-      formattedNote: string, 
-      wordsForOblong: string[], 
+  ): {
+      formattedNote: string,
+      wordsForOblong: string[],
       correctionType: 'misread' | 'missing' | 'inserted',
       searchableContext: string,
   } {
-      if (!notes) return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: originalContext };
+      if (!notes) {
+          return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: originalContext };
+      }
       notes = notes.trim();
+      let originalPrefix = '';
 
-      const sbMatch = notes.match(/^(?:(MR|MW):\s*)?(.+?)\s+S\/B\s+(.+)$/i);
+      const prefixMatch = notes.match(/^(MR|MW):\s*/i);
+      if (prefixMatch) {
+          originalPrefix = prefixMatch[1].toUpperCase();
+          notes = notes.substring(prefixMatch[0].length);
+      }
+
+      const sbMatch = notes.match(/^(.+?)\s+S\/B\s+(.+)$/i);
       if (sbMatch) {
-          const originalPrefix = sbMatch[1];
-          const wrong = sbMatch[2].trim().replace(/^["']|["']$/g, '');
-          const right = sbMatch[3].trim().replace(/^["']|["']$/g, '');
-          
+          const wrong = sbMatch[1].trim().replace(/^["']|["']$/g, '');
+          const right = sbMatch[2].trim().replace(/^["']|["']$/g, '');
           let formattedNote = `read as "${wrong}" should be read as "${right}"`;
-
           if (isAudible) {
-            const prefix = (originalPrefix && originalPrefix.toUpperCase() === 'MW') ? 'MW: ' : 'MR: ';
-            formattedNote = prefix + formattedNote;
+              const prefix = originalPrefix === 'MW' ? 'MW: ' : 'MR: ';
+              formattedNote = prefix + formattedNote;
           }
+          return {
+              formattedNote,
+              wordsForOblong: right.split(' ').filter(Boolean),
+              correctionType: 'misread',
+              searchableContext: originalContext
+          };
+      }
 
-          return { 
-            formattedNote, 
-            wordsForOblong: right.split(' ').filter(w => w.length > 0),
-            correctionType: 'misread',
-            searchableContext: originalContext
+      const readAsMatch = notes.match(/^(.+?)\s+read as\s+(.+)$/i);
+      if (readAsMatch) {
+          const wrong = readAsMatch[1].trim().replace(/^["']|["']$/g, '');
+          const right = readAsMatch[2].trim().replace(/^["']|["']$/g, '');
+          let formattedNote = `read as "${wrong}" should be read as "${right}"`;
+          if (isAudible) {
+              const prefix = originalPrefix === 'MW' ? 'MW: ' : 'MR: ';
+              formattedNote = prefix + formattedNote;
+          }
+          return {
+              formattedNote,
+              wordsForOblong: right.split(' ').filter(Boolean),
+              correctionType: 'misread',
+              searchableContext: originalContext
           };
       }
 
@@ -295,33 +317,65 @@ export class FileParserService {
           const missing = missingMatch[1].trim().replace(/^["']|["']$/g, '');
           let formattedNote = `"${missing}" is missing and should be read.`;
           if (isAudible) {
-              formattedNote = `MW: ${formattedNote}`;
+              const wordCount = missing.split(/\s+/).filter(Boolean).length;
+              const prefix = wordCount > 3 ? 'ML:' : 'MW:'; // Differentiate between missing word and missing line
+              formattedNote = `${prefix} ${formattedNote}`;
           }
-          
           return {
               formattedNote,
-              wordsForOblong: missing.split(' ').filter(w => w.length > 0),
+              wordsForOblong: [],
               correctionType: 'missing',
               searchableContext: originalContext
           };
       }
 
-      const insertedMatch = notes.match(/^(?:Word(?:s)?\s+)?Inserted:\s+(.+)$/i);
-      if (insertedMatch) {
-          const inserted = insertedMatch[1].trim().replace(/^["']|["']$/g, '');
+      const omittedMatch = notes.match(/^omitted\s+(.+)$/i);
+      if (omittedMatch) {
+          const omitted = omittedMatch[1].trim().replace(/^["']|["']$/g, '');
+          let formattedNote = `"${omitted}" was omitted and should be read.`;
+          if (isAudible) {
+            const wordCount = omitted.split(/\s+/).filter(Boolean).length;
+            const prefix = wordCount > 3 ? 'ML:' : 'MW:'; // Differentiate between missing word and missing line
+            formattedNote = `${prefix} ${formattedNote}`;
+          }
           return {
-              formattedNote: `"${inserted}" was inserted and should be omitted.`,
-              wordsForOblong: inserted.split(' ').filter(w => w.length > 0),
-              correctionType: 'inserted',
+              formattedNote,
+              wordsForOblong: [],
+              correctionType: 'missing',
               searchableContext: originalContext
           };
       }
       
-      return { 
-        formattedNote: notes, 
-        wordsForOblong: [], 
-        correctionType: 'misread', 
-        searchableContext: originalContext 
+      const insertedMatch = notes.match(/^(?:Word(?:s)?\s+)?Inserted:\s+(.+)$/i);
+      if (insertedMatch) {
+          const inserted = insertedMatch[1].trim().replace(/^["']|["']$/g, '');
+          let formattedNote = `"${inserted}" was inserted and should be omitted.`;
+          if (isAudible) {
+            const wordCount = inserted.split(/\s+/).filter(Boolean).length;
+            const prefix = wordCount > 3 ? 'ML:' : 'MW:'; // Differentiate between inserted word and inserted line
+            formattedNote = `${prefix} ${formattedNote}`;
+          }
+          return {
+              formattedNote,
+              wordsForOblong: inserted.split(' ').filter(Boolean),
+              correctionType: 'inserted',
+              searchableContext: originalContext
+          };
+      }
+
+      let formattedNote = notes;
+      if (isAudible) {
+        if (!originalPrefix) {
+          formattedNote = `MW: ${notes}`;
+        } else {
+          formattedNote = `${originalPrefix}: ${notes}`;
+        }
+      }
+      return {
+          formattedNote,
+          wordsForOblong: [],
+          correctionType: 'misread',
+          searchableContext: originalContext
       };
   }
 }
