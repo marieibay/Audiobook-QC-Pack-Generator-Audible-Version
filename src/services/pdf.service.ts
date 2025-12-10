@@ -193,9 +193,9 @@ export class PdfService {
             const width = (lastItem.x + lastItem.width * lineOfSegments[lineOfSegments.length - 1].endFrac) - x;
             
             const ellipseCenterX = x + width / 2;
-            const ellipseCenterY = firstItem.y + (firstItem.height * 0.35) - 1;
-            const ellipseXScale = width / 2 + 2;
-            const ellipseYScale = (firstItem.height * 0.6) + 1;
+            const ellipseCenterY = firstItem.y + (firstItem.height * 0.45);
+            const ellipseXScale = width / 2 + 5;
+            const ellipseYScale = (firstItem.height * 0.7) + 2;
 
             copiedPage.drawEllipse({
                 x: ellipseCenterX,
@@ -261,7 +261,7 @@ export class PdfService {
     const leftMargin = 25;
     const fontSize = 10;
     const lineHeight = 13;
-    const maxWidth = width * 0.4;
+    const maxWidth = width * 0.6;
     const padding = 8;
 
     // Calculate the total height required for the text block
