@@ -89,7 +89,7 @@ export class FileParserService {
         if (!row || row.length === 0) continue;
 
         const editorComment = row[editorCommentsIndex] ? row[editorCommentsIndex].toString().trim().toLowerCase() : '';
-        if (editorComment !== 'fix not possible without pickup' && editorComment !== 'please fix.') {
+        if (editorComment !== 'fix not possible without pickup' && editorComment !== 'please fix.' && editorComment !== 'please add to pu.') {
             continue;
         }
 
@@ -100,19 +100,17 @@ export class FileParserService {
         const fullText = row[textIndex] ? row[textIndex].toString() : '';
         const problemDescription = row[problemIndex] ? row[problemIndex].toString() : '';
 
-        let wordsForOblong: string[] = [];
         // Context is always the full text with brackets removed.
         const contextPhrase = fullText.replace(/\[|\]/g, '');
         
-        // Prioritize [...] from the Text column for what to encircle.
-        const oblongMatch = fullText.match(/\[(.*?)\]/);
-        if (oblongMatch && oblongMatch[1]) {
-            wordsForOblong = oblongMatch[1].split(' ').filter(Boolean);
-        } else {
-            // As a fallback, check for 'noise on "..."' in the Problem Description.
-            const noiseMatch = problemDescription.match(/noise on ["'](.*?)["']/i);
-            if (noiseMatch && noiseMatch[1]) {
-                wordsForOblong = noiseMatch[1].split(' ').filter(Boolean);
+        const { formattedNote, wordsForOblong, correctionType } = this.processNotes(problemDescription, contextPhrase, isAudible);
+
+        // For Post QC, if wordsForOblong is empty, try to get it from the brackets in the text
+        let finalWordsForOblong = wordsForOblong;
+        if (finalWordsForOblong.length === 0) {
+            const oblongMatch = fullText.match(/\[(.*?)\]/);
+            if (oblongMatch && oblongMatch[1]) {
+                finalWordsForOblong = oblongMatch[1].split(' ').filter(Boolean);
             }
         }
         
@@ -120,11 +118,11 @@ export class FileParserService {
             Id: String(pickupId++),
             Page: page,
             ContextPhrase: contextPhrase,
-            Notes: problemDescription,
+            Notes: formattedNote,
             Track: row[trackIndex] ? row[trackIndex].toString() : '',
             Timestamp: row[timeIndex] ? row[timeIndex].toString() : '',
-            correctionType: 'misread', // Treat all as misread for highlighting
-            wordsForOblong: wordsForOblong,
+            correctionType: correctionType,
+            wordsForOblong: finalWordsForOblong,
         });
     }
     return corrections;
@@ -168,19 +166,17 @@ export class FileParserService {
       }
 
       let status = '';
-      // Search for the status string in the columns to the right of the CONTEXT column.
-      // This handles cases where there are empty columns between CONTEXT and the status.
       if (contextIndex !== -1) {
           for (let i = contextIndex + 1; i < row.length; i++) {
-              const cellValue = row[i] ? row[i].toString().trim() : '';
-              if (cellValue === 'Fix Not Possible Without Pickup') {
+              const cellValue = row[i] ? row[i].toString().trim().toLowerCase() : '';
+              if (cellValue === 'fix not possible without pickup') {
                   status = cellValue;
                   break;
               }
           }
       }
 
-      if (status === 'Fix Not Possible Without Pickup') {
+      if (status === 'fix not possible without pickup') {
         const notes = row[notesIndex] ? row[notesIndex].toString() : '';
         const originalContext = this.normalizeText(row[contextIndex] ? row[contextIndex].toString() : '');
         const timestamp = timeCodeIndex !== -1 && row[timeCodeIndex] ? row[timeCodeIndex].toString() : '';
@@ -297,16 +293,20 @@ export class FileParserService {
 
       const readAsMatch = notes.match(/^(.+?)\s+read as\s+(.+)$/i);
       if (readAsMatch) {
-          const wrong = readAsMatch[1].trim().replace(/^["']|["']$/g, '');
-          const right = readAsMatch[2].trim().replace(/^["']|["']$/g, '');
-          let formattedNote = `read as "${wrong}" should be read as "${right}"`;
+          // This format is "<correct_word> read as <incorrect_word>"
+          const correctWord = readAsMatch[1].trim().replace(/^["']|["']$/g, '');
+          const incorrectWord = readAsMatch[2].trim().replace(/^["']|["']$/g, '');
+          
+          let formattedNote = `read as "${incorrectWord}" should be read as "${correctWord}"`;
+          
           if (isAudible) {
-              const prefix = originalPrefix === 'MW' ? 'MW: ' : 'MR: ';
-              formattedNote = prefix + formattedNote;
+              // This is always a misread, so we enforce MR prefix for Audible projects.
+              formattedNote = `MR: ${formattedNote}`;
           }
+
           return {
               formattedNote,
-              wordsForOblong: right.split(' ').filter(Boolean),
+              wordsForOblong: correctWord.split(' ').filter(Boolean), // Encircle the correct word from the script
               correctionType: 'misread',
               searchableContext: originalContext
           };
