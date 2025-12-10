@@ -100,10 +100,9 @@ export class FileParserService {
         const fullText = row[textIndex] ? row[textIndex].toString() : '';
         const problemDescription = row[problemIndex] ? row[problemIndex].toString() : '';
 
-        // Context is always the full text with brackets removed.
-        const contextPhrase = fullText.replace(/\[|\]/g, '');
+        const rawContext = fullText.replace(/\[|\]/g, '');
         
-        const { formattedNote, wordsForOblong, correctionType } = this.processNotes(problemDescription, contextPhrase, isAudible);
+        const { formattedNote, wordsForOblong, correctionType, searchableContext } = this.processNotes(problemDescription, rawContext, isAudible);
 
         // For Post QC, if wordsForOblong is empty, try to get it from the brackets in the text
         let finalWordsForOblong = wordsForOblong;
@@ -117,7 +116,7 @@ export class FileParserService {
         corrections.push({
             Id: String(pickupId++),
             Page: page,
-            ContextPhrase: contextPhrase,
+            ContextPhrase: searchableContext,
             Notes: formattedNote,
             Track: row[trackIndex] ? row[trackIndex].toString() : '',
             Timestamp: row[timeIndex] ? row[timeIndex].toString() : '',
@@ -178,10 +177,10 @@ export class FileParserService {
 
       if (status === 'fix not possible without pickup') {
         const notes = row[notesIndex] ? row[notesIndex].toString() : '';
-        const originalContext = this.normalizeText(row[contextIndex] ? row[contextIndex].toString() : '');
+        const rawContext = row[contextIndex] ? row[contextIndex].toString() : '';
         const timestamp = timeCodeIndex !== -1 && row[timeCodeIndex] ? row[timeCodeIndex].toString() : '';
 
-        const processedNote = this.processNotes(notes, originalContext, isAudible);
+        const processedNote = this.processNotes(notes, rawContext, isAudible);
 
         if (!processedNote.searchableContext) {
             console.warn(`Correction on page ${row[pageIndex]} skipped because it has no context phrase.`);
@@ -254,7 +253,7 @@ export class FileParserService {
   
   private processNotes(
     notes: string,
-    originalContext: string,
+    rawContext: string,
     isAudible: boolean
   ): {
       formattedNote: string,
@@ -263,7 +262,7 @@ export class FileParserService {
       searchableContext: string,
   } {
       if (!notes) {
-          return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: originalContext };
+          return { formattedNote: '', wordsForOblong: [], correctionType: 'misread', searchableContext: this.normalizeText(rawContext) };
       }
       notes = notes.trim();
       let originalPrefix = '';
@@ -287,7 +286,7 @@ export class FileParserService {
               formattedNote,
               wordsForOblong: right.split(' ').filter(Boolean),
               correctionType: 'misread',
-              searchableContext: originalContext
+              searchableContext: this.normalizeText(rawContext)
           };
       }
 
@@ -308,7 +307,7 @@ export class FileParserService {
               formattedNote,
               wordsForOblong: correctWord.split(' ').filter(Boolean), // Encircle the correct word from the script
               correctionType: 'misread',
-              searchableContext: originalContext
+              searchableContext: this.normalizeText(rawContext)
           };
       }
 
@@ -323,9 +322,9 @@ export class FileParserService {
           }
           return {
               formattedNote,
-              wordsForOblong: [],
+              wordsForOblong: missing.split(' ').filter(Boolean),
               correctionType: 'missing',
-              searchableContext: originalContext
+              searchableContext: this.normalizeText(rawContext)
           };
       }
 
@@ -340,9 +339,9 @@ export class FileParserService {
           }
           return {
               formattedNote,
-              wordsForOblong: [],
+              wordsForOblong: omitted.split(' ').filter(Boolean),
               correctionType: 'missing',
-              searchableContext: originalContext
+              searchableContext: this.normalizeText(rawContext)
           };
       }
       
@@ -355,11 +354,26 @@ export class FileParserService {
             const prefix = wordCount > 3 ? 'ML:' : 'MW:'; // Differentiate between inserted word and inserted line
             formattedNote = `${prefix} ${formattedNote}`;
           }
+          
+          let wordsForOblong: string[] = [];
+          const placeholderMatch = rawContext.match(/(.*?)[\s_﹏]+(.*?)/s);
+          if (placeholderMatch) {
+              const beforeText = placeholderMatch[1].trim();
+              const afterText = placeholderMatch[2].trim();
+              
+              const beforeWords = beforeText.split(/\s+/);
+              const afterWords = afterText.split(/\s+/);
+      
+              if (beforeWords.length > 0 && afterWords.length > 0) {
+                  wordsForOblong = [beforeWords[beforeWords.length - 1], afterWords[0]];
+              }
+          }
+
           return {
               formattedNote,
-              wordsForOblong: inserted.split(' ').filter(Boolean),
+              wordsForOblong: wordsForOblong,
               correctionType: 'inserted',
-              searchableContext: originalContext
+              searchableContext: this.normalizeText(rawContext)
           };
       }
 
@@ -375,7 +389,7 @@ export class FileParserService {
           formattedNote,
           wordsForOblong: [],
           correctionType: 'misread',
-          searchableContext: originalContext
+          searchableContext: this.normalizeText(rawContext)
       };
   }
 }
