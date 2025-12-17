@@ -39,40 +39,25 @@ export class PdfService {
             if (corr.wordsForOblong && corr.wordsForOblong.length > 0 && segments.length > 0) {
                 const sentenceItems = segments.map(seg => seg.item);
                 
-                if (corr.correctionType === 'inserted' && corr.wordsForOblong.length === 2) {
-                    // Robust logic: Find each boundary word individually within the sentence context.
-                    const word1Segments = this.findItemSegmentsForPhrase(corr.wordsForOblong[0], sentenceItems);
-                    const word2Segments = this.findItemSegmentsForPhrase(corr.wordsForOblong[1], sentenceItems);
-
-                    if (word1Segments && word1Segments.length > 0 && word2Segments && word2Segments.length > 0) {
-                        const firstWord1Range = word1Segments[0];
-                        const firstWord2RangeAfterWord1 = word2Segments.find(seg => 
-                            seg.itemIndex > firstWord1Range.itemIndex || 
-                            (seg.itemIndex === firstWord1Range.itemIndex && seg.startFrac >= firstWord1Range.endFrac)
-                        );
-
-                        if (firstWord2RangeAfterWord1) {
-                            oblongSegments = [
-                                { item: sentenceItems[firstWord1Range.itemIndex], startFrac: firstWord1Range.startFrac, endFrac: firstWord1Range.endFrac },
-                                { item: sentenceItems[firstWord2RangeAfterWord1.itemIndex], startFrac: firstWord2RangeAfterWord1.startFrac, endFrac: firstWord2RangeAfterWord1.endFrac }
-                            ];
-                        } else {
-                            console.warn(`Could not find boundary word 2 after word 1 for INSERTION on page ${pageNum}.`, corr);
-                        }
-                    } else {
-                        console.warn(`Could not find one or both boundary words for INSERTION on page ${pageNum}.`, corr);
-                    }
-                } else if (corr.correctionType === 'misread' || corr.correctionType === 'missing') {
-                    const finalOblongRanges = this.findItemSegmentsForPhrase(corr.wordsForOblong.join(' '), sentenceItems);
-                     if (finalOblongRanges) {
-                        oblongSegments = finalOblongRanges.map(r => ({
-                            item: sentenceItems[r.itemIndex],
-                            startFrac: r.startFrac,
-                            endFrac: r.endFrac,
-                        }));
-                    } else {
-                        console.warn(`Could not find words for oblong WITHIN CONTEXT on page ${pageNum}. Words:`, corr.wordsForOblong.join(' '));
-                    }
+                let phrasesToFind: string[] = [];
+                if (corr.correctionType === 'inserted') {
+                    // For inserted, find each boundary word individually.
+                    phrasesToFind = corr.wordsForOblong; // e.g., ['pointed', 'the']
+                } else {
+                    // For misread/missing, search for the words as a single phrase.
+                    phrasesToFind = [corr.wordsForOblong.join(' ')]; // e.g., ['need you']
+                }
+        
+                const allRanges = phrasesToFind.flatMap(phrase => this.findItemSegmentsForPhrase(phrase, sentenceItems) || []);
+        
+                if (allRanges.length > 0) {
+                    oblongSegments = allRanges.map(r => ({
+                        item: sentenceItems[r.itemIndex],
+                        startFrac: r.startFrac,
+                        endFrac: r.endFrac,
+                    }));
+                } else {
+                    console.warn(`Could not find words for oblong on page ${pageNum}. Words:`, corr.wordsForOblong);
                 }
             }
             if (!correctionsByPage.has(pageNum)) {
@@ -259,8 +244,8 @@ export class PdfService {
     const { width, height } = page.getSize();
     const topMargin = 25;
     const leftMargin = 25;
-    const fontSize = 10;
-    const lineHeight = 13;
+    const fontSize = 12;
+    const lineHeight = 15;
     const maxWidth = width * 0.6;
     const padding = 8;
 

@@ -320,10 +320,15 @@ export class FileParserService {
               const prefix = wordCount > 3 ? 'ML:' : 'MW:'; // Differentiate between missing word and missing line
               formattedNote = `${prefix} ${formattedNote}`;
           }
+          
+          // The words to be circled are the missing words themselves.
+          const wordsForOblong = missing.split(' ').filter(Boolean);
+
           return {
               formattedNote,
-              wordsForOblong: missing.split(' ').filter(Boolean),
+              wordsForOblong: wordsForOblong,
               correctionType: 'missing',
+              // The full context should be searchable, as the word exists in the script.
               searchableContext: this.normalizeText(rawContext)
           };
       }
@@ -355,23 +360,9 @@ export class FileParserService {
             formattedNote = `${prefix} ${formattedNote}`;
           }
           
-          let wordsForOblong: string[] = [];
-          const placeholderMatch = rawContext.match(/(.*?)[\s_﹏]+(.*?)/s);
-          if (placeholderMatch) {
-              const beforeText = placeholderMatch[1].trim();
-              const afterText = placeholderMatch[2].trim();
-              
-              const beforeWords = beforeText.split(/\s+/);
-              const afterWords = afterText.split(/\s+/);
-      
-              if (beforeWords.length > 0 && afterWords.length > 0) {
-                  wordsForOblong = [beforeWords[beforeWords.length - 1], afterWords[0]];
-              }
-          }
-
           return {
               formattedNote,
-              wordsForOblong: wordsForOblong,
+              wordsForOblong: [], // Set to empty array to disable circling for inserted words
               correctionType: 'inserted',
               searchableContext: this.normalizeText(rawContext)
           };
@@ -391,5 +382,24 @@ export class FileParserService {
           correctionType: 'misread',
           searchableContext: this.normalizeText(rawContext)
       };
+  }
+
+  normalizeForSearch(s: string): string {
+    if (!s) return '';
+    return s
+      .toLowerCase()
+      // ligatures
+      .replace(/ﬁ/g, 'fi')
+      .replace(/ﬂ/g, 'fl')
+      .replace(/ﬀ/g, 'ff')
+      .replace(/ﬃ/g, 'ffi')
+      .replace(/ﬄ/g, 'ffl')
+      // quotes
+      .replace(/[‘’]/g, "'")
+      .replace(/[“”]/g, '"')
+      // keep letters, numbers, apostrophes, spaces
+      .replace(/[^a-z0-9'\s]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }
