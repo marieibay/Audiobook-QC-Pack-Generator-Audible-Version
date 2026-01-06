@@ -244,8 +244,8 @@ export class PdfService {
     const { width, height } = page.getSize();
     const topMargin = 25;
     const leftMargin = 25;
-    const fontSize = 12;
-    const lineHeight = 15;
+    const fontSize = 10;
+    const lineHeight = 12;
     const maxWidth = width * 0.6;
     const padding = 8;
 
