@@ -178,9 +178,9 @@ export class PdfService {
             const width = (lastItem.x + lastItem.width * lineOfSegments[lineOfSegments.length - 1].endFrac) - x;
             
             const ellipseCenterX = x + width / 2;
-            const ellipseCenterY = firstItem.y + (firstItem.height * 0.45);
-            const ellipseXScale = width / 2 + 5;
-            const ellipseYScale = (firstItem.height * 0.7) + 2;
+            const ellipseCenterY = firstItem.y + (firstItem.height * 0.5); // Adjusted to 0.5 to better center vertically on line
+            const ellipseXScale = width / 2 + 10; // Increased padding to ensure full word coverage
+            const ellipseYScale = (firstItem.height * 0.6) + 5; // Adjusted height ratio and padding
 
             copiedPage.drawEllipse({
                 x: ellipseCenterX,

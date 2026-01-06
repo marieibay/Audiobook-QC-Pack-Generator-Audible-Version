@@ -13,7 +13,7 @@
   <main class="flex-grow flex items-center justify-center py-10 px-4">
     <div class="bg-white rounded-xl shadow-2xl p-8 max-w-3xl w-full">
         <div class="text-center mb-8">
-            <h2 class="text-2xl font-bold text-gray-800">Generate QC Pack</h2>
+            <h2 class="text-2xl font-bold text-gray-800">Generate QC Pack PDF</h2>
             <p class="text-gray-500 mt-2">Upload your QC report and script to create a PDF of pages needing corrections.</p>
         </div>
 
@@ -105,7 +105,7 @@
               <button id="generateBtn" (click)="startParsing()" 
                       [disabled]="!qcFile() || !scriptFile()"
                       class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-10 text-lg rounded-full shadow-lg transition duration-300 ease-in-out transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
-                <span>Generate QC Pack</span>
+                <span>Generate QC Pack PDF</span>
               </button>
             }
             @case ('parsing') {
@@ -205,7 +205,7 @@
                   <span class="font-semibold">Upload Files:</span> Upload your QC report (CSV/XLSX) and the full script (PDF).
                 </li>
                 <li>
-                  <span class="font-semibold">Set Page Number Offset:</span> If the page numbers in your report don't match the PDF page numbers (e.g., report page 1 is actually page 5 in the PDF viewer), enter the difference in this box. In this example, you would enter '4'. Leave it at '0' if the numbers match.
+                  <span class="font-semibold">Set Page Number Offset:</span> If the report page numbers don't match the PDF page numbers (e.g., report page 1 is actually page 5 in the PDF viewer), enter the difference in this box. In this example, you would enter '4'. Leave it at '0' if the numbers match.
                 </li>
                 <li>
                   <span class="font-semibold">Generate & Confirm:</span> Click "Generate QC Pack". The app will parse your report to find corrections. Review the preview, then click "Proceed".
