@@ -193,19 +193,46 @@ export class PdfService {
         }
       }
 
-      // Notes box
-      const notesWithTimestamps = correctionsForPage.map(c => {
-        let noteText = c.Notes;
-        if (!isAudible) {
-            const formattedTimestamp = this.formatTimestampForNote(c.Timestamp);
-            if (c.Track && formattedTimestamp) {
-              noteText += `\n${c.Track}/${formattedTimestamp}`;
-            }
-        }
-        return noteText;
-      });
+      // Notes box logic - Group identical notes
+      const groupedCorrections = new Map<string, (Correction & { 
+        underlineSegments: UnderlineSegment[], 
+        oblongSegments: UnderlineSegment[],
+      })[]>();
 
-      const allNotesForPage = notesWithTimestamps.join('\n\n');
+      for (const c of correctionsForPage) {
+          const noteKey = c.Notes.trim();
+          if (!groupedCorrections.has(noteKey)) {
+              groupedCorrections.set(noteKey, []);
+          }
+          groupedCorrections.get(noteKey)!.push(c);
+      }
+
+      const noteBlocks: string[] = [];
+
+      for (const [noteText, group] of groupedCorrections) {
+          let block = noteText;
+          
+          if (!isAudible) {
+              const timestamps = group
+                  .map(c => {
+                      const ts = this.formatTimestampForNote(c.Timestamp);
+                      if (c.Track && ts) {
+                          return `${c.Track}/${ts}`;
+                      } else if (ts) {
+                          return ts;
+                      }
+                      return '';
+                  })
+                  .filter(s => s !== '');
+              
+              if (timestamps.length > 0) {
+                  block += `\n${timestamps.join(' - ')}`;
+              }
+          }
+          noteBlocks.push(block);
+      }
+
+      const allNotesForPage = noteBlocks.join('\n\n');
       this.drawNotesBox(copiedPage, allNotesForPage, notesFont, rgb);
 
       qcPackPdfDoc.addPage(copiedPage);
@@ -249,15 +276,43 @@ export class PdfService {
     const maxWidth = width * 0.6;
     const padding = 8;
 
-    // Calculate the total height required for the text block
-    const lines = text.split('\n');
-    let textBlockHeight = 0;
-    lines.forEach(line => {
-      const wrappedLineCount = Math.ceil(font.widthOfTextAtSize(line, fontSize) / maxWidth) || 1;
-      textBlockHeight += wrappedLineCount * lineHeight;
+    // Helper to wrap text manually to avoid pdf-lib wrapping mismatch
+    const wrapText = (paragraph: string): string[] => {
+      const words = paragraph.split(' ');
+      let lines: string[] = [];
+      let currentLine = words[0];
+
+      for (let i = 1; i < words.length; i++) {
+        const word = words[i];
+        const testLine = currentLine + ' ' + word;
+        const width = font.widthOfTextAtSize(testLine, fontSize);
+        if (width <= maxWidth) {
+          currentLine = testLine;
+        } else {
+          lines.push(currentLine);
+          currentLine = word;
+        }
+      }
+      lines.push(currentLine);
+      return lines;
+    };
+
+    const paragraphs = text.split('\n');
+    const linesToDraw: string[] = [];
+    
+    paragraphs.forEach(paragraph => {
+       if (paragraph === '') {
+           linesToDraw.push('');
+       } else {
+           const wrapped = wrapText(paragraph);
+           linesToDraw.push(...wrapped);
+       }
     });
+
+    let textBlockHeight = linesToDraw.length * lineHeight;
+    
     // Adjust for the last line's leading to make padding even
-    if (text.length > 0) {
+    if (linesToDraw.length > 0) {
       textBlockHeight -= (lineHeight - fontSize);
     }
     
@@ -278,20 +333,17 @@ export class PdfService {
       borderWidth: 1,
     });
 
-    // Draw the text line by line inside the box
+    // Draw the text line by line
     let currentY = boxY + boxHeight - padding - fontSize;
-    for (const line of lines) {
+    for (const line of linesToDraw) {
       page.drawText(line, {
         x: boxX + padding,
         y: currentY,
         size: fontSize,
         font: font,
         color: rgb(0, 0, 0),
-        lineHeight: lineHeight,
-        maxWidth: maxWidth,
       });
-      const wrappedLineCount = Math.ceil(font.widthOfTextAtSize(line, fontSize) / maxWidth) || 1;
-      currentY -= wrappedLineCount * lineHeight;
+      currentY -= lineHeight;
     }
   }
 
