@@ -154,6 +154,7 @@ export class PdfService {
 
           // Helper to check if a character is a word character
           const isWordChar = (char: string) => /[a-zA-Z0-9']/.test(char);
+          const isPunctuation = (char: string) => /[.,!?;:"]/.test(char);
 
           // Find the start of the current word (containing specificStart)
           let currentWordStart = specificStart;
@@ -164,6 +165,10 @@ export class PdfService {
           // Find the end of the current word (containing specificEnd)
           let currentWordEnd = specificEnd;
           while (currentWordEnd < corpus.length - 1 && isWordChar(corpus[currentWordEnd + 1])) {
+            currentWordEnd++;
+          }
+          // Include trailing punctuation
+          while (currentWordEnd < corpus.length - 1 && isPunctuation(corpus[currentWordEnd + 1])) {
             currentWordEnd++;
           }
 
@@ -188,6 +193,8 @@ export class PdfService {
           // If we found a word character, go forward to the end of that word
           if (n < corpus.length) {
             while (n < corpus.length - 1 && isWordChar(corpus[n + 1])) n++;
+            // Include trailing punctuation for the next word too
+            while (n < corpus.length - 1 && isPunctuation(corpus[n + 1])) n++;
             wordEnd = n;
           } else {
             wordEnd = corpus.length - 1; // No next word, go to end
