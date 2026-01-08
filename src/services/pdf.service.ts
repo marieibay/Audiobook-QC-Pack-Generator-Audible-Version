@@ -350,21 +350,34 @@ export class PdfService {
           }
 
           // 2. Draw Red Underline for Words (underlineSegments)
-          for (const seg of correction.underlineSegments) {
-            const { item, startFrac, endFrac } = seg;
-            const clampedStart = Math.max(0, Math.min(1, startFrac));
-            const clampedEnd = Math.max(clampedStart, Math.min(1, endFrac));
-            if (clampedEnd <= clampedStart) continue;
+          const segments = correction.underlineSegments;
+          if (segments.length > 0) {
+            // Sort by itemIndex to find the true start and end
+            const sortedSegs = [...segments].sort((a, b) => a.itemIndex - b.itemIndex);
 
-            const padding = 5.0; // Significant bleed to ensure full character coverage
-            const startX = item.x + item.width * clampedStart;
-            const endX = item.x + item.width * clampedEnd;
+            for (let i = 0; i < sortedSegs.length; i++) {
+              const seg = sortedSegs[i];
+              const { item, startFrac, endFrac } = seg;
+              const clampedStart = Math.max(0, Math.min(1, startFrac));
+              const clampedEnd = Math.max(clampedStart, Math.min(1, endFrac));
+              if (clampedEnd <= clampedStart) continue;
 
-            copiedPage.drawLine({
-              start: { x: startX - padding, y: item.y - 2 },
-              end: { x: endX + padding, y: item.y - 2 },
-              thickness: 1.3, color: rgb(1, 0, 0), // Red
-            });
+              const startX = item.x + item.width * clampedStart;
+              const endX = item.x + item.width * clampedEnd;
+
+              const padding = 0.75; // Minimal padding to prevent "shy" characters without being "way off"
+
+              // Only apply start padding to the very first segment in the run
+              const finalStartX = (i === 0) ? startX - padding : startX;
+              // Only apply end padding to the very last segment in the run
+              const finalEndX = (i === sortedSegs.length - 1) ? endX + padding : endX;
+
+              copiedPage.drawLine({
+                start: { x: finalStartX, y: item.y - 2 },
+                end: { x: finalEndX, y: item.y - 2 },
+                thickness: 1.3, color: rgb(1, 0, 0), // Red
+              });
+            }
           }
 
         } else {
