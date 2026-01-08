@@ -153,7 +153,7 @@ export class PdfService {
 
           // Helper to check if a character is a word character
           const isWordChar = (char: string) => /[a-zA-Z0-9']/.test(char);
-          const isPunctuation = (char: string) => /[.,!?;:"]/.test(char);
+          const isPunctuation = (char: string) => /[.,!?;:"“”‘’()\[\]\-_]/.test(char);
           const isSentenceEnd = (char: string) => /[.?!]/.test(char);
 
           const findSentenceStart = (fromIndex: number): number => {
@@ -178,47 +178,45 @@ export class PdfService {
           const targetSentenceStart = findSentenceStart(specificStart - 1);
           const targetSentenceEnd = findSentenceEnd(specificEnd);
 
-          // Find the start of the current word (containing specificStart)
-          let currentWordStart = specificStart;
-          while (currentWordStart > targetSentenceStart && isWordChar(corpus[currentWordStart - 1])) {
-            currentWordStart--;
-          }
+          // Helper to expand a word range to include attached punctuation
+          const expandWord = (startIdx: number, endIdx: number, limitStart: number, limitEnd: number) => {
+            let s = startIdx;
+            let e = endIdx;
+            // Expand core word
+            while (s > limitStart && isWordChar(corpus[s - 1])) s--;
+            while (e < limitEnd && isWordChar(corpus[e + 1])) e++;
+            // Expand to include leading/trailing punctuation
+            while (s > limitStart && isPunctuation(corpus[s - 1])) s--;
+            while (e < limitEnd && isPunctuation(corpus[e + 1])) e++;
+            return { s, e };
+          };
 
-          // Find the end of the current word (containing specificEnd)
-          let currentWordEnd = specificEnd;
-          while (currentWordEnd < targetSentenceEnd && isWordChar(corpus[currentWordEnd + 1])) {
-            currentWordEnd++;
-          }
-          // Include trailing punctuation (if still in sentence)
-          while (currentWordEnd < targetSentenceEnd && isPunctuation(corpus[currentWordEnd + 1])) {
-            currentWordEnd++;
-          }
+          // Find boundaries for current word
+          const currentWord = expandWord(specificStart, specificEnd, targetSentenceStart, targetSentenceEnd);
+          let wordStart = currentWord.s;
+          let wordEnd = currentWord.e;
 
           // Now find the previous word (MUST BE WITHIN SAME SENTENCE)
-          let wordStart = currentWordStart;
-          if (currentWordStart > targetSentenceStart) {
-            let p = currentWordStart - 1;
-            // Skip spacing/punc (within sentence)
-            while (p >= targetSentenceStart && !isWordChar(corpus[p])) p--;
-            // If we found a word character (still in same sentence), go to its start
+          if (currentWord.s > targetSentenceStart) {
+            let p = currentWord.s - 1;
+            // Skip spacing (within sentence)
+            while (p >= targetSentenceStart && /\s/.test(corpus[p])) p--;
+            // If we found a character (still in same sentence), treat as next word
             if (p >= targetSentenceStart) {
-              while (p > targetSentenceStart && isWordChar(corpus[p - 1])) p--;
-              wordStart = p;
+              const prevWord = expandWord(p, p, targetSentenceStart, targetSentenceEnd);
+              wordStart = prevWord.s;
             }
           }
 
           // Now find the next word (MUST BE WITHIN SAME SENTENCE)
-          let wordEnd = currentWordEnd;
-          if (currentWordEnd < targetSentenceEnd) {
-            let n = currentWordEnd + 1;
-            // Skip spacing/punc (within sentence)
-            while (n <= targetSentenceEnd && !isWordChar(corpus[n])) n++;
-            // If we found a word character (still in same sentence), go to its end
+          if (currentWord.e < targetSentenceEnd) {
+            let n = currentWord.e + 1;
+            // Skip spacing (within sentence)
+            while (n <= targetSentenceEnd && /\s/.test(corpus[n])) n++;
+            // If we found a character (still in same sentence), treat as next word
             if (n <= targetSentenceEnd) {
-              while (n < targetSentenceEnd && isWordChar(corpus[n + 1])) n++;
-              // Include trailing punc?
-              while (n < targetSentenceEnd && isPunctuation(corpus[n + 1])) n++;
-              wordEnd = n;
+              const nextWord = expandWord(n, n, targetSentenceStart, targetSentenceEnd);
+              wordEnd = nextWord.e;
             }
           }
 
@@ -340,10 +338,14 @@ export class PdfService {
             const clampedEnd = Math.max(clampedStart, Math.min(1, endFrac));
             if (clampedEnd <= clampedStart) continue;
 
+            const padding = 1.5; // points of bleed to cover character edges
+            const startX = item.x + item.width * clampedStart;
+            const endX = item.x + item.width * clampedEnd;
+
             copiedPage.drawLine({
-              start: { x: item.x + item.width * clampedStart, y: item.y - 2 },
-              end: { x: item.x + item.width * clampedEnd, y: item.y - 2 },
-              thickness: 1.0, color: rgb(1, 0, 0), // Red
+              start: { x: startX - (clampedStart > 0 ? padding : 0), y: item.y - 2 },
+              end: { x: endX + (clampedEnd < 1 ? padding : 0), y: item.y - 2 },
+              thickness: 1.2, color: rgb(1, 0, 0), // Red
             });
           }
 
