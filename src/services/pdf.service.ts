@@ -9,8 +9,6 @@ interface UnderlineSegment {
   itemIndex: number;
   startFrac: number;
   endFrac: number;
-  startChar?: number; // Added for exact font measurement
-  endChar?: number;   // Added for exact font measurement
 }
 
 @Injectable({ providedIn: 'root' })
@@ -154,11 +152,11 @@ export class PdfService {
           // 1. Expand (up to) 3 words: [Prev] [Target] [Next] (STAY WITHIN PUNCTUATION BOUNDARIES)
 
           // Helper to check if a character is a word character
-          const isWordChar = (char: string) => /[a-zA-Z0-9']/.test(char);
+          const isWordChar = (char: string) => /[a-zA-Z0-9'’]/.test(char);
           // Characters that attached to words (should be underlined)
-          const isAttachedPunctuation = (char: string) => /[.,!?;:"“”‘’()\[\]]/.test(char);
+          const isAttachedPunctuation = (char: string) => /[.,!?;:"“”‘’()\[\]\-_]/.test(char);
           // Characters that act as boundaries (do NOT cross these for the 3-word expansion)
-          const isUnderlineBoundary = (char: string) => /[.?!,;:—()\[\]"“”]/.test(char);
+          const isUnderlineBoundary = (char: string) => /[.?!,;:—()\[\]"“”‘’]/.test(char);
 
           const findBoundaryStart = (fromIndex: number): number => {
             let i = fromIndex;
@@ -208,6 +206,7 @@ export class PdfService {
             // If we found a character (still in same boundary), treat as prev word
             if (p >= underlineLimitStart && !isUnderlineBoundary(corpus[p])) {
               const prevWord = expandWord(p, p, underlineLimitStart, underlineLimitEnd);
+              // Ensure we don't start the prev word with a boundary
               wordStart = prevWord.s;
             }
           }
@@ -220,6 +219,7 @@ export class PdfService {
             // If we found a character (still in same boundary), treat as next word
             if (n <= underlineLimitEnd && !isUnderlineBoundary(corpus[n])) {
               const nextWord = expandWord(n, n, underlineLimitStart, underlineLimitEnd);
+              // Ensure we don't end the next word with a boundary
               wordEnd = nextWord.e;
             }
           }
@@ -313,6 +313,7 @@ export class PdfService {
 
     const pagesToInclude = Array.from(correctionsByPage.keys()).sort((a, b) => a - b);
     const notesFont = await qcPackPdfDoc.embedFont(StandardFonts.Helvetica);
+    const timesRomanFont = await qcPackPdfDoc.embedFont(StandardFonts.TimesRoman);
 
     for (const pageNum of pagesToInclude) {
       const pageIndex = pageNum - 1;
@@ -351,32 +352,14 @@ export class PdfService {
 
           // 2. Draw Red Underline for Words (underlineSegments)
           for (const seg of correction.underlineSegments) {
-            const { item, startChar, endChar } = seg;
+            const { item, startFrac, endFrac } = seg;
+            const clampedStart = Math.max(0, Math.min(1, startFrac));
+            const clampedEnd = Math.max(clampedStart, Math.min(1, endFrac));
+            if (clampedEnd <= clampedStart) continue;
 
-            // Calculate precise offsets using font metrics if indices available
-            let startX = item.x;
-            let endX = item.x + item.width;
-
-            if (startChar !== undefined && endChar !== undefined) {
-              const fontSize = item.height || 12;
-              const textBefore = item.str.substring(0, startChar);
-              const textWithin = item.str.substring(0, endChar + 1);
-
-              // Measure exact widths using the notes font (Helvetica)
-              // Note: If the actual PDF font is very different, this is still an approximation,
-              // but it's much better than linear interpolation.
-              const offsetStart = notesFont.widthOfTextAtSize(textBefore, fontSize);
-              const offsetEnd = notesFont.widthOfTextAtSize(textWithin, fontSize);
-
-              startX = item.x + offsetStart;
-              endX = item.x + offsetEnd;
-            } else {
-              // Fallback to fractional if indices missing
-              startX = item.x + item.width * seg.startFrac;
-              endX = item.x + item.width * seg.endFrac;
-            }
-
-            const padding = 2.0; // points of bleed for visibility
+            const padding = 5.0; // Significant bleed to ensure full character coverage
+            const startX = item.x + item.width * clampedStart;
+            const endX = item.x + item.width * clampedEnd;
 
             copiedPage.drawLine({
               start: { x: startX - padding, y: item.y - 2 },
@@ -727,16 +710,11 @@ export class PdfService {
       const startFrac = range.start / itemLen;
       const endFrac = (range.end + 1) / itemLen;
 
-      const startChar = range.start;
-      const endChar = range.end;
-
       return {
         item,
         itemIndex,
         startFrac: Math.max(0, Math.min(1, startFrac)),
         endFrac: Math.max(0, Math.min(1, endFrac)),
-        startChar,
-        endChar
       };
     }).sort((a, b) => a.itemIndex - b.itemIndex);
 
