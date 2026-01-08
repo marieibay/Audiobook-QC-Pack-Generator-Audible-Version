@@ -25,7 +25,7 @@ export class AppComponent {
   generatedPageCount = signal<number>(0);
   pageOffset = signal<number>(0);
   isAudibleProject = signal<boolean>(false);
-  
+
   uiState = signal<UIState>('idle');
   parsedCorrections = signal<Correction[]>([]);
   instructionsVisible = signal(false);
@@ -58,7 +58,7 @@ export class AppComponent {
     const input = event.target as HTMLInputElement;
     this.isAudibleProject.set(input.checked);
   }
-  
+
   async startParsing(): Promise<void> {
     const currentQcFile = this.qcFile();
     const isAudible = this.isAudibleProject();
@@ -76,9 +76,12 @@ export class AppComponent {
       this.parsedCorrections.set(corrections);
 
       if (corrections.length === 0) {
-        this.status.set({ text: 'Parsing complete. No corrections requiring a pickup were found.', type: 'warning' });
+        this.status.set({
+          text: 'Parsing complete but 0 corrections were found. Please check your CSV column headers and ensure rows have "fix" or "pickup" in the status/comments.',
+          type: 'warning'
+        });
         this.uiState.set('complete');
-        this.generatedPdfBytes.set(new Uint8Array()); 
+        this.generatedPdfBytes.set(new Uint8Array());
         this.generatedPageCount.set(0);
       } else {
         this.status.set({ text: `Found ${corrections.length} corrections. Please confirm to proceed.`, type: 'info' });
@@ -110,7 +113,7 @@ export class AppComponent {
     try {
       const scriptPdfBytes = await currentScriptFile.arrayBuffer();
       const { pdfBytes, pageCount } = await this.pdfService.createQCPack(scriptPdfBytes, corrections, pageOffset, isAudible);
-      
+
       this.generatedPdfBytes.set(pdfBytes);
       this.generatedPageCount.set(pageCount);
       this.status.set({ text: `QC Pack generated successfully with ${pageCount} pages! Ready to download.`, type: 'success' });
@@ -128,11 +131,22 @@ export class AppComponent {
     const pdfBytes = this.generatedPdfBytes();
     if (pdfBytes && pdfBytes.length > 0) {
       const scriptFileName = this.scriptFile()?.name ?? 'script';
+      console.log('Script filename:', scriptFileName);
       const downloadName = `${scriptFileName.replace(/\.pdf$/i, '')}_QCPack.pdf`;
-      this.downloadFile(pdfBytes, downloadName, 'application/pdf');
+      console.log('Calculated download name:', downloadName);
+
+      try {
+        this.downloadFile(pdfBytes, downloadName, 'application/pdf');
+      } catch (e) {
+        console.error('Download failed:', e);
+        alert('Download failed. Check console for details.');
+      }
+    } else {
+      console.error('No PDF bytes to download');
+      alert('Error: No PDF content generated. Please try generating again.');
     }
   }
-  
+
   resetToIdle(): void {
     this.uiState.set('idle');
     this.status.set(null);
@@ -144,7 +158,7 @@ export class AppComponent {
   reset(): void {
     this.qcFile.set(null);
     this.scriptFile.set(null);
-    
+
     const qcInput = document.getElementById('qcInput') as HTMLInputElement;
     const scriptInput = document.getElementById('scriptInput') as HTMLInputElement;
     if (qcInput) qcInput.value = '';
@@ -156,14 +170,17 @@ export class AppComponent {
   }
 
   private downloadFile(data: Uint8Array, filename: string, mimeType: string): void {
-    const blob = new Blob([data], { type: mimeType });
+    console.log(`Attempting to download file: ${filename}, size: ${data.length}, type: ${mimeType}`);
+    const blob = new Blob([data as any], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 500);
   }
 }
