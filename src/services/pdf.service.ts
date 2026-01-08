@@ -149,70 +149,17 @@ export class PdfService {
             }
           }
 
-          // 1. Expand to 3 words: [Prev] [Target] [Next]
-          // Using specificStart/specificEnd as the anchor
+          // 1. Expand (up to) 3 words: [Prev] [Target] [Next] (STAY WITHIN SENTENCE)
 
           // Helper to check if a character is a word character
           const isWordChar = (char: string) => /[a-zA-Z0-9']/.test(char);
           const isPunctuation = (char: string) => /[.,!?;:"]/.test(char);
-
-          // Find the start of the current word (containing specificStart)
-          let currentWordStart = specificStart;
-          while (currentWordStart > 0 && isWordChar(corpus[currentWordStart - 1])) {
-            currentWordStart--;
-          }
-
-          // Find the end of the current word (containing specificEnd)
-          let currentWordEnd = specificEnd;
-          while (currentWordEnd < corpus.length - 1 && isWordChar(corpus[currentWordEnd + 1])) {
-            currentWordEnd++;
-          }
-          // Include trailing punctuation
-          while (currentWordEnd < corpus.length - 1 && isPunctuation(corpus[currentWordEnd + 1])) {
-            currentWordEnd++;
-          }
-
-          // Now find the previous word
-          let wordStart = currentWordStart;
-          let p = currentWordStart - 1;
-          // Skip any non-word characters (spaces, punctuation)
-          while (p >= 0 && !isWordChar(corpus[p])) p--;
-          // If we found a word character, go back to the start of that word
-          if (p >= 0) {
-            while (p > 0 && isWordChar(corpus[p - 1])) p--;
-            wordStart = p;
-          } else {
-            wordStart = 0; // No previous word, start from beginning
-          }
-
-          // Now find the next word
-          let wordEnd = currentWordEnd;
-          let n = currentWordEnd + 1;
-          // Skip any non-word characters (spaces, punctuation)
-          while (n < corpus.length && !isWordChar(corpus[n])) n++;
-          // If we found a word character, go forward to the end of that word
-          if (n < corpus.length) {
-            while (n < corpus.length - 1 && isWordChar(corpus[n + 1])) n++;
-            // Include trailing punctuation for the next word too
-            while (n < corpus.length - 1 && isPunctuation(corpus[n + 1])) n++;
-            wordEnd = n;
-          } else {
-            wordEnd = corpus.length - 1; // No next word, go to end
-          }
-
-          const threeWordSegments = this.mapRangeToItems(wordStart, wordEnd, charMap, pageItems);
-
-          // 2. Expand to 3 sentences: [Prev] [Target] [Next]
-          // Find sentence boundaries. 
-          // Current sentence start:
           const isSentenceEnd = (char: string) => /[.?!]/.test(char);
 
           const findSentenceStart = (fromIndex: number): number => {
             let i = fromIndex;
             while (i >= 0) {
-              if (isSentenceEnd(corpus[i])) {
-                return i + 1;
-              }
+              if (isSentenceEnd(corpus[i])) return i + 1;
               i--;
             }
             return 0;
@@ -221,13 +168,65 @@ export class PdfService {
           const findSentenceEnd = (fromIndex: number): number => {
             let i = fromIndex;
             while (i < corpus.length) {
-              if (isSentenceEnd(corpus[i])) {
-                return i;
-              }
+              if (isSentenceEnd(corpus[i])) return i;
               i++;
             }
             return corpus.length - 1;
           };
+
+          // Sentence boundaries for the target word
+          const targetSentenceStart = findSentenceStart(specificStart - 1);
+          const targetSentenceEnd = findSentenceEnd(specificEnd);
+
+          // Find the start of the current word (containing specificStart)
+          let currentWordStart = specificStart;
+          while (currentWordStart > targetSentenceStart && isWordChar(corpus[currentWordStart - 1])) {
+            currentWordStart--;
+          }
+
+          // Find the end of the current word (containing specificEnd)
+          let currentWordEnd = specificEnd;
+          while (currentWordEnd < targetSentenceEnd && isWordChar(corpus[currentWordEnd + 1])) {
+            currentWordEnd++;
+          }
+          // Include trailing punctuation (if still in sentence)
+          while (currentWordEnd < targetSentenceEnd && isPunctuation(corpus[currentWordEnd + 1])) {
+            currentWordEnd++;
+          }
+
+          // Now find the previous word (MUST BE WITHIN SAME SENTENCE)
+          let wordStart = currentWordStart;
+          if (currentWordStart > targetSentenceStart) {
+            let p = currentWordStart - 1;
+            // Skip spacing/punc (within sentence)
+            while (p >= targetSentenceStart && !isWordChar(corpus[p])) p--;
+            // If we found a word character (still in same sentence), go to its start
+            if (p >= targetSentenceStart) {
+              while (p > targetSentenceStart && isWordChar(corpus[p - 1])) p--;
+              wordStart = p;
+            }
+          }
+
+          // Now find the next word (MUST BE WITHIN SAME SENTENCE)
+          let wordEnd = currentWordEnd;
+          if (currentWordEnd < targetSentenceEnd) {
+            let n = currentWordEnd + 1;
+            // Skip spacing/punc (within sentence)
+            while (n <= targetSentenceEnd && !isWordChar(corpus[n])) n++;
+            // If we found a word character (still in same sentence), go to its end
+            if (n <= targetSentenceEnd) {
+              while (n < targetSentenceEnd && isWordChar(corpus[n + 1])) n++;
+              // Include trailing punc?
+              while (n < targetSentenceEnd && isPunctuation(corpus[n + 1])) n++;
+              wordEnd = n;
+            }
+          }
+
+          const threeWordSegments = this.mapRangeToItems(wordStart, wordEnd, charMap, pageItems);
+
+          // 2. Expand to 3 sentences: [Prev] [Target] [Next]
+          // Find sentence boundaries for 3-sentence blocks. 
+          // (isSentenceEnd, findSentenceStart, findSentenceEnd helpers are already defined above)
 
           // Start of target phrase is inside "Target Sentence"
           // Scan back to find start of Target Sentence
