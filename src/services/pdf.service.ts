@@ -6,9 +6,11 @@ declare var pdfjsLib: any;
 
 interface UnderlineSegment {
   item: PageTextItem;
-  itemIndex: number; // Added for compatibility
-  startFrac: number; // 0–1 within item.width
-  endFrac: number;   // 0–1 within item.width
+  itemIndex: number;
+  startFrac: number;
+  endFrac: number;
+  startChar?: number; // Added for exact font measurement
+  endChar?: number;   // Added for exact font measurement
 }
 
 @Injectable({ providedIn: 'root' })
@@ -349,18 +351,36 @@ export class PdfService {
 
           // 2. Draw Red Underline for Words (underlineSegments)
           for (const seg of correction.underlineSegments) {
-            const { item, startFrac, endFrac } = seg;
-            const clampedStart = Math.max(0, Math.min(1, startFrac));
-            const clampedEnd = Math.max(clampedStart, Math.min(1, endFrac));
-            if (clampedEnd <= clampedStart) continue;
+            const { item, startChar, endChar } = seg;
 
-            const padding = 3.5; // points of bleed to cover character edges (increased for variable width fonts)
-            const startX = item.x + item.width * clampedStart;
-            const endX = item.x + item.width * clampedEnd;
+            // Calculate precise offsets using font metrics if indices available
+            let startX = item.x;
+            let endX = item.x + item.width;
+
+            if (startChar !== undefined && endChar !== undefined) {
+              const fontSize = item.height || 12;
+              const textBefore = item.str.substring(0, startChar);
+              const textWithin = item.str.substring(0, endChar + 1);
+
+              // Measure exact widths using the notes font (Helvetica)
+              // Note: If the actual PDF font is very different, this is still an approximation,
+              // but it's much better than linear interpolation.
+              const offsetStart = notesFont.widthOfTextAtSize(textBefore, fontSize);
+              const offsetEnd = notesFont.widthOfTextAtSize(textWithin, fontSize);
+
+              startX = item.x + offsetStart;
+              endX = item.x + offsetEnd;
+            } else {
+              // Fallback to fractional if indices missing
+              startX = item.x + item.width * seg.startFrac;
+              endX = item.x + item.width * seg.endFrac;
+            }
+
+            const padding = 2.0; // points of bleed for visibility
 
             copiedPage.drawLine({
-              start: { x: startX - (clampedStart > 0 ? padding : 0), y: item.y - 2 },
-              end: { x: endX + (clampedEnd < 1 ? padding : 0), y: item.y - 2 },
+              start: { x: startX - padding, y: item.y - 2 },
+              end: { x: endX + padding, y: item.y - 2 },
               thickness: 1.3, color: rgb(1, 0, 0), // Red
             });
           }
@@ -707,11 +727,16 @@ export class PdfService {
       const startFrac = range.start / itemLen;
       const endFrac = (range.end + 1) / itemLen;
 
+      const startChar = range.start;
+      const endChar = range.end;
+
       return {
         item,
         itemIndex,
         startFrac: Math.max(0, Math.min(1, startFrac)),
         endFrac: Math.max(0, Math.min(1, endFrac)),
+        startChar,
+        endChar
       };
     }).sort((a, b) => a.itemIndex - b.itemIndex);
 
