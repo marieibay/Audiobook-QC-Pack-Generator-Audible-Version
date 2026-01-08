@@ -6,9 +6,9 @@ declare var pdfjsLib: any;
 
 interface UnderlineSegment {
   item: PageTextItem;
-  itemIndex: number;
-  startFrac: number;
-  endFrac: number;
+  itemIndex: number; // Added for compatibility
+  startFrac: number; // 0–1 within item.width
+  endFrac: number;   // 0–1 within item.width
 }
 
 @Injectable({ providedIn: 'root' })
@@ -313,7 +313,6 @@ export class PdfService {
 
     const pagesToInclude = Array.from(correctionsByPage.keys()).sort((a, b) => a - b);
     const notesFont = await qcPackPdfDoc.embedFont(StandardFonts.Helvetica);
-    const timesRomanFont = await qcPackPdfDoc.embedFont(StandardFonts.TimesRoman);
 
     for (const pageNum of pagesToInclude) {
       const pageIndex = pageNum - 1;
