@@ -149,34 +149,36 @@ export class PdfService {
             }
           }
 
-          // 1. Expand (up to) 3 words: [Prev] [Target] [Next] (STAY WITHIN SENTENCE)
+          // 1. Expand (up to) 3 words: [Prev] [Target] [Next] (STAY WITHIN PUNCTUATION BOUNDARIES)
 
           // Helper to check if a character is a word character
           const isWordChar = (char: string) => /[a-zA-Z0-9']/.test(char);
-          const isPunctuation = (char: string) => /[.,!?;:"“”‘’()\[\]\-_]/.test(char);
-          const isSentenceEnd = (char: string) => /[.?!]/.test(char);
+          // Characters that attached to words (should be underlined)
+          const isAttachedPunctuation = (char: string) => /[.,!?;:"“”‘’()\[\]]/.test(char);
+          // Characters that act as boundaries (do NOT cross these for the 3-word expansion)
+          const isUnderlineBoundary = (char: string) => /[.?!,;:—()\[\]"“”]/.test(char);
 
-          const findSentenceStart = (fromIndex: number): number => {
+          const findBoundaryStart = (fromIndex: number): number => {
             let i = fromIndex;
             while (i >= 0) {
-              if (isSentenceEnd(corpus[i])) return i + 1;
+              if (isUnderlineBoundary(corpus[i])) return i + 1;
               i--;
             }
             return 0;
           };
 
-          const findSentenceEnd = (fromIndex: number): number => {
+          const findBoundaryEnd = (fromIndex: number): number => {
             let i = fromIndex;
             while (i < corpus.length) {
-              if (isSentenceEnd(corpus[i])) return i;
+              if (isUnderlineBoundary(corpus[i])) return i;
               i++;
             }
             return corpus.length - 1;
           };
 
-          // Sentence boundaries for the target word
-          const targetSentenceStart = findSentenceStart(specificStart - 1);
-          const targetSentenceEnd = findSentenceEnd(specificEnd);
+          // Underline boundaries for the target word
+          const underlineLimitStart = findBoundaryStart(specificStart - 1);
+          const underlineLimitEnd = findBoundaryEnd(specificEnd);
 
           // Helper to expand a word range to include attached punctuation
           const expandWord = (startIdx: number, endIdx: number, limitStart: number, limitEnd: number) => {
@@ -186,46 +188,60 @@ export class PdfService {
             while (s > limitStart && isWordChar(corpus[s - 1])) s--;
             while (e < limitEnd && isWordChar(corpus[e + 1])) e++;
             // Expand to include leading/trailing punctuation
-            while (s > limitStart && isPunctuation(corpus[s - 1])) s--;
-            while (e < limitEnd && isPunctuation(corpus[e + 1])) e++;
+            while (s > limitStart && isAttachedPunctuation(corpus[s - 1])) s--;
+            while (e < limitEnd && isAttachedPunctuation(corpus[e + 1])) e++;
             return { s, e };
           };
 
           // Find boundaries for current word
-          const currentWord = expandWord(specificStart, specificEnd, targetSentenceStart, targetSentenceEnd);
+          const currentWord = expandWord(specificStart, specificEnd, underlineLimitStart, underlineLimitEnd);
           let wordStart = currentWord.s;
           let wordEnd = currentWord.e;
 
-          // Now find the previous word (MUST BE WITHIN SAME SENTENCE)
-          if (currentWord.s > targetSentenceStart) {
+          // Now find the previous word (MUST BE WITHIN SAME PUNCTUATION BOUNDARY)
+          if (currentWord.s > underlineLimitStart) {
             let p = currentWord.s - 1;
-            // Skip spacing (within sentence)
-            while (p >= targetSentenceStart && /\s/.test(corpus[p])) p--;
-            // If we found a character (still in same sentence), treat as next word
-            if (p >= targetSentenceStart) {
-              const prevWord = expandWord(p, p, targetSentenceStart, targetSentenceEnd);
+            // Skip spacing (within boundary)
+            while (p >= underlineLimitStart && /\s/.test(corpus[p])) p--;
+            // If we found a character (still in same boundary), treat as prev word
+            if (p >= underlineLimitStart && !isUnderlineBoundary(corpus[p])) {
+              const prevWord = expandWord(p, p, underlineLimitStart, underlineLimitEnd);
               wordStart = prevWord.s;
             }
           }
 
-          // Now find the next word (MUST BE WITHIN SAME SENTENCE)
-          if (currentWord.e < targetSentenceEnd) {
+          // Now find the next word (MUST BE WITHIN SAME PUNCTUATION BOUNDARY)
+          if (currentWord.e < underlineLimitEnd) {
             let n = currentWord.e + 1;
-            // Skip spacing (within sentence)
-            while (n <= targetSentenceEnd && /\s/.test(corpus[n])) n++;
-            // If we found a character (still in same sentence), treat as next word
-            if (n <= targetSentenceEnd) {
-              const nextWord = expandWord(n, n, targetSentenceStart, targetSentenceEnd);
+            // Skip spacing (within boundary)
+            while (n <= underlineLimitEnd && /\s/.test(corpus[n])) n++;
+            // If we found a character (still in same boundary), treat as next word
+            if (n <= underlineLimitEnd && !isUnderlineBoundary(corpus[n])) {
+              const nextWord = expandWord(n, n, underlineLimitStart, underlineLimitEnd);
               wordEnd = nextWord.e;
             }
           }
 
           const threeWordSegments = this.mapRangeToItems(wordStart, wordEnd, charMap, pageItems);
 
-          // 2. Expand to 3 sentences: [Prev] [Target] [Next]
-          // Find sentence boundaries for 3-sentence blocks. 
-          // (isSentenceEnd, findSentenceStart, findSentenceEnd helpers are already defined above)
-
+          // 2. Expand to 3 sentences: [Prev] [Target] [Next] (STAY WITHIN .?! BOUNDARIES)
+          const isSentenceEnd = (char: string) => /[.?!]/.test(char);
+          const findSentenceStart = (fromIndex: number): number => {
+            let i = fromIndex;
+            while (i >= 0) {
+              if (isSentenceEnd(corpus[i])) return i + 1;
+              i--;
+            }
+            return 0;
+          };
+          const findSentenceEnd = (fromIndex: number): number => {
+            let i = fromIndex;
+            while (i < corpus.length) {
+              if (isSentenceEnd(corpus[i])) return i;
+              i++;
+            }
+            return corpus.length - 1;
+          };
           // Start of target phrase is inside "Target Sentence"
           // Scan back to find start of Target Sentence
           let targetSentStart = findSentenceStart(start - 1);
@@ -338,14 +354,14 @@ export class PdfService {
             const clampedEnd = Math.max(clampedStart, Math.min(1, endFrac));
             if (clampedEnd <= clampedStart) continue;
 
-            const padding = 1.5; // points of bleed to cover character edges
+            const padding = 3.5; // points of bleed to cover character edges (increased for variable width fonts)
             const startX = item.x + item.width * clampedStart;
             const endX = item.x + item.width * clampedEnd;
 
             copiedPage.drawLine({
               start: { x: startX - (clampedStart > 0 ? padding : 0), y: item.y - 2 },
               end: { x: endX + (clampedEnd < 1 ? padding : 0), y: item.y - 2 },
-              thickness: 1.2, color: rgb(1, 0, 0), // Red
+              thickness: 1.3, color: rgb(1, 0, 0), // Red
             });
           }
 
