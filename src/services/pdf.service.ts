@@ -375,7 +375,7 @@ export class PdfService {
               copiedPage.drawLine({
                 start: { x: finalStartX, y: item.y - 2 },
                 end: { x: finalEndX, y: item.y - 2 },
-                thickness: 1.3, color: rgb(1, 0, 0), // Red
+                thickness: 0.8, color: rgb(1, 0, 0), // Red (Thinner for better precision)
               });
             }
           }
