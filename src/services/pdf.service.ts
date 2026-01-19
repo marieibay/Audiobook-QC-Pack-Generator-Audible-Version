@@ -132,17 +132,29 @@ export class PdfService {
 
           if (targetPhrase) {
             const contextStr = corpus.substring(start, end + 1);
-
-            // Normalize context segment and target phrase
             const normTarget = this.normalizeForSearch(targetPhrase);
             const { normalizedText: normContext, originalIndices: contextIndices } = this.normalizeAndMap(contextStr);
 
-            const localMatchIndex = normContext.indexOf(normTarget);
+            // Attempt to find whole-word match first
+            const escapedTarget = normTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const targetRegex = new RegExp(`\\b${escapedTarget}\\b`, 'i');
+            const match = normContext.match(targetRegex);
+
+            let localMatchIndex = -1;
+            let matchedLength = normTarget.length;
+
+            if (match && match.index !== undefined) {
+              localMatchIndex = match.index;
+              matchedLength = match[0].length;
+            } else {
+              // Fallback to indexOf
+              localMatchIndex = normContext.indexOf(normTarget);
+            }
 
             if (localMatchIndex !== -1) {
               // Found specific word inside context!
               const localStart = contextIndices[localMatchIndex];
-              const localEnd = contextIndices[localMatchIndex + normTarget.length - 1]; // inclusive of last char
+              const localEnd = contextIndices[localMatchIndex + matchedLength - 1];
 
               specificStart = start + localStart;
               specificEnd = start + localEnd;
@@ -365,7 +377,7 @@ export class PdfService {
               const startX = item.x + item.width * clampedStart;
               const endX = item.x + item.width * clampedEnd;
 
-              const padding = 0.75; // Minimal padding to prevent "shy" characters without being "way off"
+              const padding = 0.1; // Minimal bleed to ensure no gaps, but not "way off"
 
               // Only apply start padding to the very first segment in the run
               const finalStartX = (i === 0) ? startX - padding : startX;
@@ -375,7 +387,7 @@ export class PdfService {
               copiedPage.drawLine({
                 start: { x: finalStartX, y: item.y - 2 },
                 end: { x: finalEndX, y: item.y - 2 },
-                thickness: 0.8, color: rgb(1, 0, 0), // Red (Thinner for better precision)
+                thickness: 0.5, color: rgb(1, 0, 0), // Red (Even thinner as requested)
               });
             }
           }
