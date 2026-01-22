@@ -363,7 +363,7 @@ export class PdfService {
 
           // 2. Draw Red Underline for Words (underlineSegments)
           const segments = correction.underlineSegments;
-          if (segments.length > 0) {
+          if (false && segments.length > 0) {
             // Sort by itemIndex to find the true start and end
             const sortedSegs = [...segments].sort((a, b) => a.itemIndex - b.itemIndex);
 
